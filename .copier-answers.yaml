@@ -1,0 +1,12 @@
+# Changes here will be overwritten by Copier
+_commit: 9be318c
+_src_path: https://github.com/python-project-templates/base.git
+add_docs: false
+add_extension: js
+add_wiki: false
+email: dev@1kbgz.com
+github: 1kbgz
+project_description: Mobile GitHub command center
+project_name: af1
+python_version_primary: '3.11'
+team: the af1 authors
