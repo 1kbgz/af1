@@ -4,10 +4,28 @@
     <title>af1</title>
     <meta name="description" content="Mobile GitHub command center" />
     <meta name="author" content="the af1 authors" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <meta http-equiv="content-type" content="text/html; charset=utf-8" />
+    <meta name="theme-color" content="#0d1117" />
     <link rel="stylesheet" type="text/css" href="css/index.css" />
     <script type="module" src="cdn/index.js"></script>
   </head>
-  <body></body>
+  <body>
+    <header id="app-header">
+      <div class="header-left">
+        <h1>af1</h1>
+        <nav id="app-nav">
+          <a href="#/" class="nav-link active" data-view="pr-list">Pull Requests</a>
+        </nav>
+      </div>
+      <div class="header-right">
+        <button id="sync-btn" title="Sync now">&#x21bb;</button>
+        <span id="user-info"></span>
+      </div>
+    </header>
+    <main id="app-main">
+      <div id="loading" class="loading">Loading&hellip;</div>
+      <div id="view-container"></div>
+    </main>
+  </body>
 </html>

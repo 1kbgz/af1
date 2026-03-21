@@ -30,7 +30,12 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
 ]
 
-dependencies = []
+dependencies = [
+    "httpx>=0.27",
+    "starlette>=0.40",
+    "uvicorn[standard]>=0.30",
+    "aiosqlite>=0.20",
+]
 
 [project.optional-dependencies]
 develop = [
@@ -52,6 +57,7 @@ develop = [
 ]
 
 [project.scripts]
+af1 = "af1.server:main"
 
 [project.urls]
 Repository = "https://github.com/1kbgz/af1"
