@@ -28,6 +28,7 @@ let selectedPRs = new Set<string>(); // "owner/repo#number"
 let groupBy: "none" | "repo" | "author" = "repo";
 let sortColumn: "number" | "author" | "created" | "updated" = "number";
 let sortAsc = false; // false = descending (newest first, matching GitHub)
+let activeStat: string | null = null; // active stat-card filter key
 
 function prKey(pr: PullRequest): string {
   return `${pr.repo_owner}/${pr.repo_name}#${pr.number}`;
@@ -217,8 +218,46 @@ export async function renderPRList(container: HTMLElement): Promise<void> {
   renderDashboard();
 }
 
+function matchesStat(pr: PullRequest, stat: string): boolean {
+  switch (stat) {
+    case "total":
+      return true;
+    case "ready":
+      return (
+        pr.ci_status?.toUpperCase() === "SUCCESS" &&
+        pr.mergeable?.toUpperCase() === "MERGEABLE" &&
+        !pr.draft
+      );
+    case "pass":
+      return pr.ci_status?.toUpperCase() === "SUCCESS";
+    case "fail":
+      return (
+        pr.ci_status?.toUpperCase() === "FAILURE" ||
+        pr.ci_status?.toUpperCase() === "ERROR"
+      );
+    case "pending":
+      return (
+        pr.ci_status?.toUpperCase() === "PENDING" ||
+        pr.ci_status?.toUpperCase() === "EXPECTED"
+      );
+    case "mergeable":
+      return pr.mergeable?.toUpperCase() === "MERGEABLE";
+    case "conflicts":
+      return pr.mergeable?.toUpperCase() === "CONFLICTING";
+    case "approved":
+      return pr.review_decision?.toUpperCase() === "APPROVED";
+    case "drafts":
+      return !!pr.draft;
+    default:
+      return true;
+  }
+}
+
 function getFiltered(): PullRequest[] {
   let filtered = allPRs;
+  if (activeStat && activeStat !== "total") {
+    filtered = filtered.filter((pr) => matchesStat(pr, activeStat!));
+  }
   if (filterText) {
     filtered = filtered.filter(
       (pr) =>
@@ -269,57 +308,43 @@ function sortPRs(prs: PullRequest[]): PullRequest[] {
   return sortAsc ? sorted : sorted.reverse();
 }
 
-function renderStats(filtered: PullRequest[]): void {
+function renderStats(): void {
   const container = document.getElementById("dashboard-stats");
   if (!container) return;
 
-  const total = filtered.length;
-  const ciPass = filtered.filter(
-    (p) => p.ci_status?.toUpperCase() === "SUCCESS",
-  ).length;
-  const ciFail = filtered.filter(
-    (p) =>
-      p.ci_status?.toUpperCase() === "FAILURE" ||
-      p.ci_status?.toUpperCase() === "ERROR",
-  ).length;
-  const ciPending = filtered.filter(
-    (p) =>
-      p.ci_status?.toUpperCase() === "PENDING" ||
-      p.ci_status?.toUpperCase() === "EXPECTED",
-  ).length;
-  const mergeable = filtered.filter(
-    (p) => p.mergeable?.toUpperCase() === "MERGEABLE",
-  ).length;
-  const conflicts = filtered.filter(
-    (p) => p.mergeable?.toUpperCase() === "CONFLICTING",
-  ).length;
-  const approved = filtered.filter(
-    (p) => p.review_decision?.toUpperCase() === "APPROVED",
-  ).length;
-  const drafts = filtered.filter((p) => p.draft).length;
-  const readyToMerge = filtered.filter(
-    (p) =>
-      p.ci_status?.toUpperCase() === "SUCCESS" &&
-      p.mergeable?.toUpperCase() === "MERGEABLE" &&
-      !p.draft,
-  ).length;
+  // Always compute counts from allPRs so cards stay meaningful as toggle buttons
+  const stats: Array<{ key: string; cls: string; label: string }> = [
+    { key: "total", cls: "stat-total", label: "Open PRs" },
+    { key: "ready", cls: "stat-ready", label: "Ready to merge" },
+    { key: "pass", cls: "stat-pass", label: "CI passing" },
+    { key: "fail", cls: "stat-fail", label: "CI failing" },
+    { key: "pending", cls: "stat-pending-stat", label: "CI pending" },
+    { key: "mergeable", cls: "stat-mergeable", label: "No conflicts" },
+    { key: "conflicts", cls: "stat-conflicts", label: "Conflicts" },
+    { key: "approved", cls: "stat-approved", label: "Approved" },
+    { key: "drafts", cls: "stat-drafts", label: "Drafts" },
+  ];
 
-  container.innerHTML = `
-    <div class="stat-card stat-total"><div class="stat-value">${total}</div><div class="stat-label">Open PRs</div></div>
-    <div class="stat-card stat-ready"><div class="stat-value">${readyToMerge}</div><div class="stat-label">Ready to merge</div></div>
-    <div class="stat-card stat-pass"><div class="stat-value">${ciPass}</div><div class="stat-label">CI passing</div></div>
-    <div class="stat-card stat-fail"><div class="stat-value">${ciFail}</div><div class="stat-label">CI failing</div></div>
-    <div class="stat-card stat-pending-stat"><div class="stat-value">${ciPending}</div><div class="stat-label">CI pending</div></div>
-    <div class="stat-card stat-mergeable"><div class="stat-value">${mergeable}</div><div class="stat-label">No conflicts</div></div>
-    <div class="stat-card stat-conflicts"><div class="stat-value">${conflicts}</div><div class="stat-label">Conflicts</div></div>
-    <div class="stat-card stat-approved"><div class="stat-value">${approved}</div><div class="stat-label">Approved</div></div>
-    <div class="stat-card stat-drafts"><div class="stat-value">${drafts}</div><div class="stat-label">Drafts</div></div>
-  `;
+  container.innerHTML = stats
+    .map((s) => {
+      const count = allPRs.filter((p) => matchesStat(p, s.key)).length;
+      const active = activeStat === s.key ? " active" : "";
+      return `<div class="stat-card ${s.cls}${active}" data-stat="${s.key}"><div class="stat-value">${count}</div><div class="stat-label">${s.label}</div></div>`;
+    })
+    .join("");
+
+  container.querySelectorAll<HTMLElement>(".stat-card").forEach((card) => {
+    card.addEventListener("click", () => {
+      const key = card.dataset.stat!;
+      activeStat = activeStat === key ? null : key;
+      renderDashboard();
+    });
+  });
 }
 
 function renderDashboard(): void {
   const filtered = getFiltered();
-  renderStats(filtered);
+  renderStats();
   updateBatchBar();
 
   const container = document.getElementById("pr-table-container");

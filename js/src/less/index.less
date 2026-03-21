@@ -78,8 +78,17 @@ body {
   background: var(--border-color);
 }
 
+#sync-btn .sync-icon {
+  display: inline-block;
+}
+
 #sync-btn.syncing {
-  animation: spin 1s linear infinite;
+  pointer-events: none;
+  opacity: 0.7;
+}
+
+#sync-btn.syncing .sync-icon {
+  animation: spin 0.8s linear infinite;
 }
 
 @keyframes spin {
@@ -159,6 +168,19 @@ body {
   border-radius: var(--radius);
   padding: 12px;
   text-align: center;
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+
+.stat-card:hover {
+  background: var(--bg-tertiary);
+}
+
+.stat-card.active {
+  border-color: var(--blue);
+  background: var(--bg-tertiary);
 }
 
 .stat-value {
