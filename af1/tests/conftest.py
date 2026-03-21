@@ -1,0 +1,182 @@
+"""Shared fixtures for af1 tests."""
+
+from __future__ import annotations
+
+from unittest.mock import AsyncMock
+
+import pytest
+import pytest_asyncio
+
+from af1.config import Config
+from af1.db import get_db
+
+
+@pytest.fixture
+def tmp_db_path(tmp_path):
+    """Return a temporary database path."""
+    return tmp_path / "test.db"
+
+
+@pytest_asyncio.fixture
+async def db(tmp_db_path):
+    """Create and return a temporary database connection."""
+    conn = await get_db(tmp_db_path)
+    yield conn
+    await conn.close()
+
+
+@pytest.fixture
+def sample_config(tmp_db_path):
+    """Return a test Config instance."""
+    return Config(
+        github_token="ghp_test_token_123",
+        github_host="github.com",
+        watched_authors=["testuser", "otheruser"],
+        db_path=tmp_db_path,
+        host="127.0.0.1",
+        port=8510,
+        sync_interval_seconds=60,
+    )
+
+
+def make_pr(
+    *,
+    id: int = 1001,
+    node_id: str = "PR_node1",
+    repo_owner: str = "testorg",
+    repo_name: str = "testrepo",
+    number: int = 42,
+    title: str = "Fix the widget",
+    body: str = "This PR fixes the widget.",
+    state: str = "OPEN",
+    author: str = "testuser",
+    author_avatar: str = "https://avatars.example.com/u/1",
+    draft: bool = False,
+    mergeable: str = "MERGEABLE",
+    head_ref: str = "fix-widget",
+    head_sha: str = "abc123def456",
+    base_ref: str = "main",
+    base_sha: str = "000111222333",
+    additions: int = 10,
+    deletions: int = 3,
+    changed_files: int = 2,
+    review_decision: str = "APPROVED",
+    ci_status: str = "SUCCESS",
+    labels: list | None = None,
+    created_at: str = "2025-01-15T10:00:00Z",
+    updated_at: str = "2025-01-16T12:00:00Z",
+    merged_at: str | None = None,
+    closed_at: str | None = None,
+    url: str = "https://github.com/testorg/testrepo/pull/42",
+) -> dict:
+    """Create a sample PR dict matching GitHubClient._normalize_pr output."""
+    return {
+        "id": id,
+        "node_id": node_id,
+        "repo_owner": repo_owner,
+        "repo_name": repo_name,
+        "number": number,
+        "title": title,
+        "body": body,
+        "state": state,
+        "author": author,
+        "author_avatar": author_avatar,
+        "draft": draft,
+        "mergeable": mergeable,
+        "head_ref": head_ref,
+        "head_sha": head_sha,
+        "base_ref": base_ref,
+        "base_sha": base_sha,
+        "additions": additions,
+        "deletions": deletions,
+        "changed_files": changed_files,
+        "review_decision": review_decision,
+        "ci_status": ci_status,
+        "labels": labels or [{"name": "bug", "color": "d73a4a"}],
+        "created_at": created_at,
+        "updated_at": updated_at,
+        "merged_at": merged_at,
+        "closed_at": closed_at,
+        "url": url,
+    }
+
+
+def make_commits():
+    """Sample commit data."""
+    return [
+        {
+            "sha": "abc123def456",
+            "message": "Fix the widget\n\nDetailed description",
+            "author": "testuser",
+            "authored_date": "2025-01-15T10:30:00Z",
+            "url": "https://github.com/testorg/testrepo/commit/abc123def456",
+        },
+        {
+            "sha": "def789ghi012",
+            "message": "Address review comments",
+            "author": "testuser",
+            "authored_date": "2025-01-16T11:00:00Z",
+            "url": "https://github.com/testorg/testrepo/commit/def789ghi012",
+        },
+    ]
+
+
+def make_files():
+    """Sample file data."""
+    return [
+        {
+            "filename": "src/widget.py",
+            "status": "modified",
+            "additions": 8,
+            "deletions": 2,
+            "patch": "@@ -10,5 +10,11 @@\n-old line\n+new line\n+another new line",
+        },
+        {
+            "filename": "tests/test_widget.py",
+            "status": "added",
+            "additions": 2,
+            "deletions": 1,
+            "patch": "@@ -0,0 +1,2 @@\n+def test_widget():\n+    assert True",
+        },
+    ]
+
+
+def make_checks():
+    """Sample check run data."""
+    return [
+        {
+            "name": "CI",
+            "status": "completed",
+            "conclusion": "success",
+            "url": "https://github.com/testorg/testrepo/actions/runs/1",
+        },
+        {
+            "name": "lint",
+            "status": "completed",
+            "conclusion": "success",
+            "url": "https://github.com/testorg/testrepo/actions/runs/2",
+        },
+        {
+            "name": "typecheck",
+            "status": "completed",
+            "conclusion": "failure",
+            "url": "https://github.com/testorg/testrepo/actions/runs/3",
+        },
+    ]
+
+
+def mock_github_client():
+    """Create a mock GitHubClient with standard responses."""
+    client = AsyncMock()
+    client.fetch_open_prs_for_authors = AsyncMock(return_value=[make_pr()])
+    client.fetch_review_requested_prs = AsyncMock(return_value=[])
+    client.fetch_pr_commits = AsyncMock(return_value=make_commits())
+    client.fetch_pr_files = AsyncMock(return_value=make_files())
+    client.fetch_pr_check_runs = AsyncMock(return_value=make_checks())
+    client.get_authenticated_user = AsyncMock(
+        return_value={"login": "testuser", "name": "Test User", "avatar_url": "https://avatars.example.com/u/1"}
+    )
+    client.merge_pull_request = AsyncMock(return_value={"success": True})
+    client.close_pull_request = AsyncMock(return_value={"success": True})
+    client.close = AsyncMock()
+    return client

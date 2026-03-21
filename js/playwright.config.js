@@ -12,7 +12,7 @@ export default defineConfig({
     ["junit", { outputFile: "junit.xml" }],
   ],
   use: {
-    baseURL: "http://127.0.0.1:3000",
+    baseURL: "http://127.0.0.1:8510",
     trace: "on-first-retry",
   },
   projects: [
@@ -22,9 +22,9 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "yarn start:tests",
-    url: "http://127.0.0.1:3000",
+    command: "python tools/test_server.py",
+    url: "http://127.0.0.1:8510/api/health",
     reuseExistingServer: !process.env.CI,
-    timeout: 120 * 1000,
+    timeout: 30 * 1000,
   },
 });
