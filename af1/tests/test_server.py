@@ -46,6 +46,8 @@ def app(test_config):
         api_pr_detail,
         api_pull_requests,
         api_sync,
+        api_sync_pr,
+        api_sync_repo,
     )
 
     routes = [
@@ -60,6 +62,8 @@ def app(test_config):
         Route("/api/issues", api_issues),
         Route("/api/issues/{owner}/{repo}/{number:int}", api_issue_detail),
         Route("/api/sync", api_sync, methods=["POST"]),
+        Route("/api/prs/{owner}/{repo}/{number:int}/sync", api_sync_pr, methods=["POST"]),
+        Route("/api/repos/{owner}/{repo}/sync", api_sync_repo, methods=["POST"]),
     ]
 
     app = Starlette(routes=routes)
@@ -190,58 +194,104 @@ class TestPRDetailEndpoint:
 
 
 class TestBatchMerge:
-    async def test_batch_merge_success(self, app, client):
+    async def test_batch_merge_success(self, app, client, tmp_path):
+        db = await get_db(tmp_path / "test.db")
+        app.state.db = db
         app.state.github_client = mock_github_client()
-        resp = await client.post(
-            "/api/prs/merge",
-            json={"targets": [{"owner": "org", "repo": "repo", "number": 1}]},
-        )
-        assert resp.status_code == 200
-        data = resp.json()
-        assert len(data) == 1
-        assert data[0]["success"] is True
+        pr = make_pr(repo_owner="org", repo_name="repo", number=1)
+        await upsert_pull_request(db, pr)
+        await db.commit()
+        try:
+            resp = await client.post(
+                "/api/prs/merge",
+                json={"targets": [{"owner": "org", "repo": "repo", "number": 1}]},
+            )
+            assert resp.status_code == 200
+            data = resp.json()
+            assert len(data) == 1
+            assert data[0]["success"] is True
+            # Verify DB state was updated
+            from af1.db import get_pr
 
-    async def test_batch_merge_missing_fields(self, app, client):
-        app.state.github_client = mock_github_client()
-        resp = await client.post(
-            "/api/prs/merge",
-            json={"targets": [{"owner": "", "repo": "repo", "number": 1}]},
-        )
-        data = resp.json()
-        assert data[0]["success"] is False
-        assert "Missing fields" in data[0]["error"]
+            pr_row = await get_pr(db, "org", "repo", 1)
+            assert pr_row["state"] == "MERGED"
+        finally:
+            await db.close()
 
-    async def test_batch_merge_multiple(self, app, client):
+    async def test_batch_merge_missing_fields(self, app, client, tmp_path):
+        db = await get_db(tmp_path / "test.db")
+        app.state.db = db
         app.state.github_client = mock_github_client()
-        targets = [
-            {"owner": "org", "repo": "repo1", "number": 1},
-            {"owner": "org", "repo": "repo2", "number": 2},
-        ]
-        resp = await client.post("/api/prs/merge", json={"targets": targets})
-        data = resp.json()
-        assert len(data) == 2
-        assert all(r["success"] for r in data)
+        try:
+            resp = await client.post(
+                "/api/prs/merge",
+                json={"targets": [{"owner": "", "repo": "repo", "number": 1}]},
+            )
+            data = resp.json()
+            assert data[0]["success"] is False
+            assert "Missing fields" in data[0]["error"]
+        finally:
+            await db.close()
+
+    async def test_batch_merge_multiple(self, app, client, tmp_path):
+        db = await get_db(tmp_path / "test.db")
+        app.state.db = db
+        app.state.github_client = mock_github_client()
+        pr1 = make_pr(id=1, node_id="PR_1", repo_owner="org", repo_name="repo1", number=1, url="https://github.com/org/repo1/pull/1")
+        pr2 = make_pr(id=2, node_id="PR_2", repo_owner="org", repo_name="repo2", number=2, url="https://github.com/org/repo2/pull/2")
+        await upsert_pull_request(db, pr1)
+        await upsert_pull_request(db, pr2)
+        await db.commit()
+        try:
+            targets = [
+                {"owner": "org", "repo": "repo1", "number": 1},
+                {"owner": "org", "repo": "repo2", "number": 2},
+            ]
+            resp = await client.post("/api/prs/merge", json={"targets": targets})
+            data = resp.json()
+            assert len(data) == 2
+            assert all(r["success"] for r in data)
+        finally:
+            await db.close()
 
 
 class TestBatchClose:
-    async def test_batch_close_success(self, app, client):
+    async def test_batch_close_success(self, app, client, tmp_path):
+        db = await get_db(tmp_path / "test.db")
+        app.state.db = db
         app.state.github_client = mock_github_client()
-        resp = await client.post(
-            "/api/prs/close",
-            json={"targets": [{"owner": "org", "repo": "repo", "number": 1}]},
-        )
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data[0]["success"] is True
+        pr = make_pr(repo_owner="org", repo_name="repo", number=1)
+        await upsert_pull_request(db, pr)
+        await db.commit()
+        try:
+            resp = await client.post(
+                "/api/prs/close",
+                json={"targets": [{"owner": "org", "repo": "repo", "number": 1}]},
+            )
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data[0]["success"] is True
+            # Verify DB state was updated
+            from af1.db import get_pr
 
-    async def test_batch_close_missing_fields(self, app, client):
+            pr_row = await get_pr(db, "org", "repo", 1)
+            assert pr_row["state"] == "CLOSED"
+        finally:
+            await db.close()
+
+    async def test_batch_close_missing_fields(self, app, client, tmp_path):
+        db = await get_db(tmp_path / "test.db")
+        app.state.db = db
         app.state.github_client = mock_github_client()
-        resp = await client.post(
-            "/api/prs/close",
-            json={"targets": [{"owner": "org", "repo": "", "number": 1}]},
-        )
-        data = resp.json()
-        assert data[0]["success"] is False
+        try:
+            resp = await client.post(
+                "/api/prs/close",
+                json={"targets": [{"owner": "org", "repo": "", "number": 1}]},
+            )
+            data = resp.json()
+            assert data[0]["success"] is False
+        finally:
+            await db.close()
 
 
 class TestBatchApprove:
@@ -304,6 +354,58 @@ class TestSyncEndpoint:
             await db.close()
 
 
+class TestSyncPREndpoint:
+    async def test_sync_pr_success(self, app, client, tmp_path):
+        db = await get_db(tmp_path / "test.db")
+        app.state.db = db
+        app.state.github_client = mock_github_client()
+        try:
+            resp = await client.post("/api/prs/org/repo/42/sync")
+            assert resp.status_code == 200
+            assert resp.json()["status"] == "ok"
+        finally:
+            await db.close()
+
+    async def test_sync_pr_error(self, app, client, tmp_path):
+        db = await get_db(tmp_path / "test.db")
+        app.state.db = db
+        mock_client = mock_github_client()
+        mock_client.fetch_single_pr = AsyncMock(side_effect=RuntimeError("Not found"))
+        app.state.github_client = mock_client
+        try:
+            resp = await client.post("/api/prs/org/repo/999/sync")
+            assert resp.status_code == 500
+            assert "error" in resp.json()
+        finally:
+            await db.close()
+
+
+class TestSyncRepoEndpoint:
+    async def test_sync_repo_success(self, app, client, tmp_path):
+        db = await get_db(tmp_path / "test.db")
+        app.state.db = db
+        app.state.github_client = mock_github_client()
+        try:
+            resp = await client.post("/api/repos/org/repo/sync")
+            assert resp.status_code == 200
+            assert resp.json()["status"] == "ok"
+        finally:
+            await db.close()
+
+    async def test_sync_repo_error(self, app, client, tmp_path):
+        db = await get_db(tmp_path / "test.db")
+        app.state.db = db
+        mock_client = mock_github_client()
+        mock_client.fetch_open_prs_for_authors = AsyncMock(side_effect=RuntimeError("API down"))
+        app.state.github_client = mock_client
+        try:
+            resp = await client.post("/api/repos/org/repo/sync")
+            assert resp.status_code == 500
+            assert "error" in resp.json()
+        finally:
+            await db.close()
+
+
 class TestCreateApp:
     def test_create_app_with_config(self, test_config):
         app = create_app(test_config)
@@ -324,6 +426,8 @@ class TestCreateApp:
         assert "/api/prs/close" in route_paths
         assert "/api/issues" in route_paths
         assert "/api/sync" in route_paths
+        assert "/api/prs/{owner}/{repo}/{number:int}/sync" in route_paths
+        assert "/api/repos/{owner}/{repo}/sync" in route_paths
 
 
 class TestIssuesEndpoint:

@@ -89,6 +89,58 @@ class TestSyncAllPrs:
         # At least pr2 should have commits
         assert len(prs) >= 1
 
+    async def test_files_failure_still_syncs_pr_and_commits(self, db, sample_config):
+        """A 403 on fetch_pr_files should not prevent PR data or commits from being saved."""
+        pr = make_pr()
+        client = mock_github_client()
+        client.fetch_open_prs_for_authors.return_value = [pr]
+        client.fetch_pr_files = AsyncMock(side_effect=RuntimeError("403 Forbidden"))
+
+        await sync_all_prs(db, client, sample_config)
+
+        prs = await get_open_prs(db)
+        assert len(prs) == 1
+        commits = await get_pr_commits(db, prs[0]["id"])
+        assert len(commits) == 2
+        checks = await get_pr_checks(db, prs[0]["id"])
+        assert len(checks) == 3
+        files = await get_pr_files(db, prs[0]["id"])
+        assert len(files) == 0
+
+    async def test_commits_failure_still_syncs_pr_and_files(self, db, sample_config):
+        """A failure on fetch_pr_commits should not prevent PR data or files from being saved."""
+        pr = make_pr()
+        client = mock_github_client()
+        client.fetch_open_prs_for_authors.return_value = [pr]
+        client.fetch_pr_commits = AsyncMock(side_effect=RuntimeError("Network error"))
+
+        await sync_all_prs(db, client, sample_config)
+
+        prs = await get_open_prs(db)
+        assert len(prs) == 1
+        commits = await get_pr_commits(db, prs[0]["id"])
+        assert len(commits) == 0
+        files = await get_pr_files(db, prs[0]["id"])
+        assert len(files) == 2
+
+    async def test_checks_failure_still_syncs_pr_and_rest(self, db, sample_config):
+        """A failure on fetch_pr_check_runs should not prevent other data from being saved."""
+        pr = make_pr()
+        client = mock_github_client()
+        client.fetch_open_prs_for_authors.return_value = [pr]
+        client.fetch_pr_check_runs = AsyncMock(side_effect=RuntimeError("500 Server Error"))
+
+        await sync_all_prs(db, client, sample_config)
+
+        prs = await get_open_prs(db)
+        assert len(prs) == 1
+        commits = await get_pr_commits(db, prs[0]["id"])
+        assert len(commits) == 2
+        files = await get_pr_files(db, prs[0]["id"])
+        assert len(files) == 2
+        checks = await get_pr_checks(db, prs[0]["id"])
+        assert len(checks) == 0
+
     async def test_skips_check_runs_without_head_sha(self, db, sample_config):
         pr = make_pr(head_sha=None)
         client = mock_github_client()
@@ -97,6 +149,80 @@ class TestSyncAllPrs:
         await sync_all_prs(db, client, sample_config)
 
         client.fetch_pr_check_runs.assert_not_called()
+
+    async def test_skips_detail_fetches_for_unchanged_pr(self, db, sample_config):
+        """If a PR's updated_at and head_sha haven't changed, skip detail fetches."""
+        client = mock_github_client()
+
+        # First sync: details should be fetched
+        await sync_all_prs(db, client, sample_config)
+        assert client.fetch_pr_files.call_count == 1
+        assert client.fetch_pr_check_runs.call_count == 1
+
+        # Reset mocks
+        client.fetch_pr_commits.reset_mock()
+        client.fetch_pr_files.reset_mock()
+        client.fetch_pr_check_runs.reset_mock()
+
+        # Second sync with same data: details should be skipped
+        await sync_all_prs(db, client, sample_config)
+        client.fetch_pr_files.assert_not_called()
+        client.fetch_pr_check_runs.assert_not_called()
+
+    async def test_refetches_details_when_updated_at_changes(self, db, sample_config):
+        """If updated_at changes, detail fetches should happen again."""
+        client = mock_github_client()
+
+        # First sync
+        await sync_all_prs(db, client, sample_config)
+
+        # Reset and change updated_at
+        client.fetch_pr_files.reset_mock()
+        client.fetch_pr_check_runs.reset_mock()
+        updated_pr = make_pr(updated_at="2025-01-17T12:00:00Z")
+        client.fetch_open_prs_for_authors.return_value = [updated_pr]
+
+        await sync_all_prs(db, client, sample_config)
+        assert client.fetch_pr_files.call_count == 1
+        assert client.fetch_pr_check_runs.call_count == 1
+
+    async def test_uses_inline_commits_when_complete(self, db, sample_config):
+        """When PR has inline commits from GraphQL, don't fetch commits separately."""
+        inline = [
+            {
+                "sha": "inline1",
+                "message": "Inline commit",
+                "author": "testuser",
+                "authored_date": "2025-01-15T10:30:00Z",
+                "url": "https://example.com",
+            }
+        ]
+        pr = make_pr(commits=inline, commits_complete=True)
+        client = mock_github_client()
+        client.fetch_open_prs_for_authors.return_value = [pr]
+
+        await sync_all_prs(db, client, sample_config)
+
+        # fetch_pr_commits should NOT be called since inline commits were complete
+        client.fetch_pr_commits.assert_not_called()
+        prs = await get_open_prs(db)
+        commits = await get_pr_commits(db, prs[0]["id"])
+        assert len(commits) == 1
+        assert commits[0]["sha"] == "inline1"
+
+    async def test_falls_back_to_fetch_when_commits_incomplete(self, db, sample_config):
+        """When inline commits are truncated (hasNextPage), fall back to full fetch."""
+        pr = make_pr(commits=[{"sha": "partial", "message": "Partial", "author": "x", "authored_date": None, "url": None}], commits_complete=False)
+        client = mock_github_client()
+        client.fetch_open_prs_for_authors.return_value = [pr]
+
+        await sync_all_prs(db, client, sample_config)
+
+        # Should fall back to fetch_pr_commits
+        assert client.fetch_pr_commits.call_count == 1
+        prs = await get_open_prs(db)
+        commits = await get_pr_commits(db, prs[0]["id"])
+        assert len(commits) == 2  # from make_commits() via mock
 
 
 class TestSyncLoop:

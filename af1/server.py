@@ -20,9 +20,9 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from . import __version__
 from .config import Config
-from .db import get_db, get_issue, get_open_issues, get_open_prs, get_pr, get_pr_checks, get_pr_commits, get_pr_files
+from .db import get_db, get_issue, get_open_issues, get_open_prs, get_pr, get_pr_checks, get_pr_commits, get_pr_files, update_pr_state
 from .github_client import GitHubClient
-from .sync import sync_all_issues, sync_all_prs, sync_loop
+from .sync import sync_all_issues, sync_all_prs, sync_loop, sync_repo_prs, sync_single_pr
 
 logger = logging.getLogger(__name__)
 
@@ -91,9 +91,40 @@ async def api_sync(request: Request) -> JSONResponse:
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
+async def api_sync_pr(request: Request) -> JSONResponse:
+    """Sync a single PR by owner/repo/number."""
+    db = request.app.state.db
+    client: GitHubClient = request.app.state.github_client
+    owner = request.path_params["owner"]
+    repo = request.path_params["repo"]
+    number = int(request.path_params["number"])
+    try:
+        await sync_single_pr(db, client, owner, repo, number)
+        return JSONResponse({"status": "ok"})
+    except Exception as e:
+        logger.exception("Single PR sync failed for %s/%s#%d", owner, repo, number)
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+async def api_sync_repo(request: Request) -> JSONResponse:
+    """Sync all PRs for a specific repo."""
+    db = request.app.state.db
+    client: GitHubClient = request.app.state.github_client
+    config: Config = request.app.state.config
+    owner = request.path_params["owner"]
+    repo = request.path_params["repo"]
+    try:
+        await sync_repo_prs(db, client, owner, repo, config)
+        return JSONResponse({"status": "ok"})
+    except Exception as e:
+        logger.exception("Repo sync failed for %s/%s", owner, repo)
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
 async def api_batch_merge(request: Request) -> JSONResponse:
     """Batch merge PRs. Expects JSON body: {"targets": [{"owner", "repo", "number"}, ...]}."""
     client: GitHubClient = request.app.state.github_client
+    db = request.app.state.db
     body = await request.json()
     targets = body.get("targets", [])
     results = []
@@ -105,6 +136,8 @@ async def api_batch_merge(request: Request) -> JSONResponse:
             results.append({"owner": owner, "repo": repo, "number": number, "success": False, "error": "Missing fields"})
             continue
         result = await client.merge_pull_request(owner, repo, int(number))
+        if result.get("success"):
+            await update_pr_state(db, owner, repo, int(number), "MERGED")
         results.append({"owner": owner, "repo": repo, "number": number, **result})
     return JSONResponse(results)
 
@@ -112,6 +145,7 @@ async def api_batch_merge(request: Request) -> JSONResponse:
 async def api_batch_close(request: Request) -> JSONResponse:
     """Batch close PRs. Expects JSON body: {"targets": [{"owner", "repo", "number"}, ...]}."""
     client: GitHubClient = request.app.state.github_client
+    db = request.app.state.db
     body = await request.json()
     targets = body.get("targets", [])
     results = []
@@ -123,6 +157,8 @@ async def api_batch_close(request: Request) -> JSONResponse:
             results.append({"owner": owner, "repo": repo, "number": number, "success": False, "error": "Missing fields"})
             continue
         result = await client.close_pull_request(owner, repo, int(number))
+        if result.get("success"):
+            await update_pr_state(db, owner, repo, int(number), "CLOSED")
         results.append({"owner": owner, "repo": repo, "number": number, **result})
     return JSONResponse(results)
 
@@ -211,6 +247,8 @@ def create_routes() -> list:
         Route("/api/issues", api_issues),
         Route("/api/issues/{owner}/{repo}/{number:int}", api_issue_detail),
         Route("/api/sync", api_sync, methods=["POST"]),
+        Route("/api/prs/{owner}/{repo}/{number:int}/sync", api_sync_pr, methods=["POST"]),
+        Route("/api/repos/{owner}/{repo}/sync", api_sync_repo, methods=["POST"]),
     ]
 
     # Serve frontend static files if the extension directory exists

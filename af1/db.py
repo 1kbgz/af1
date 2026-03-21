@@ -321,6 +321,57 @@ async def get_issue(db: aiosqlite.Connection, owner: str, repo: str, number: int
     return _row_to_dict(row) if row else None
 
 
+async def get_pr_updated_state(db: aiosqlite.Connection, owner: str, repo: str, number: int) -> tuple[str, str | None] | None:
+    """Return (updated_at, head_sha) for a PR, or None if not in DB."""
+    cursor = await db.execute(
+        "SELECT updated_at, head_sha FROM pull_requests WHERE repo_owner=? AND repo_name=? AND number=?",
+        (owner, repo, number),
+    )
+    row = await cursor.fetchone()
+    if row:
+        return (row["updated_at"], row["head_sha"])
+    return None
+
+
+async def update_pr_state(
+    db: aiosqlite.Connection, owner: str, repo: str, number: int, state: str, merged_at: str | None = None, closed_at: str | None = None
+):
+    """Update the state of a PR in the local DB (e.g. after merge/close)."""
+    await db.execute(
+        "UPDATE pull_requests SET state=?, merged_at=COALESCE(?, merged_at), closed_at=COALESCE(?, closed_at), synced_at=datetime('now') WHERE repo_owner=? AND repo_name=? AND number=?",
+        (state, merged_at, closed_at, owner, repo, number),
+    )
+    await db.commit()
+
+
+async def mark_stale_prs_closed(db: aiosqlite.Connection, still_open: set[tuple[str, str, int]]):
+    """Mark DB-open PRs as CLOSED if they weren't returned in the latest GitHub fetch."""
+    cursor = await db.execute("SELECT repo_owner, repo_name, number FROM pull_requests WHERE state='OPEN'")
+    rows = await cursor.fetchall()
+    for row in rows:
+        key = (row["repo_owner"], row["repo_name"], row["number"])
+        if key not in still_open:
+            await db.execute(
+                "UPDATE pull_requests SET state='CLOSED', synced_at=datetime('now') WHERE repo_owner=? AND repo_name=? AND number=?",
+                key,
+            )
+    await db.commit()
+
+
+async def mark_stale_issues_closed(db: aiosqlite.Connection, still_open: set[tuple[str, str, int]]):
+    """Mark DB-open issues as CLOSED if they weren't returned in the latest GitHub fetch."""
+    cursor = await db.execute("SELECT repo_owner, repo_name, number FROM issues WHERE state='OPEN'")
+    rows = await cursor.fetchall()
+    for row in rows:
+        key = (row["repo_owner"], row["repo_name"], row["number"])
+        if key not in still_open:
+            await db.execute(
+                "UPDATE issues SET state='CLOSED', synced_at=datetime('now') WHERE repo_owner=? AND repo_name=? AND number=?",
+                key,
+            )
+    await db.commit()
+
+
 def _row_to_dict(row) -> dict:
     if row is None:
         return {}

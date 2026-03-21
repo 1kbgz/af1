@@ -115,6 +115,24 @@ export async function triggerSync(): Promise<void> {
   await fetchJSON<{ status: string }>("/api/sync", { method: "POST" });
 }
 
+export async function syncPR(
+  owner: string,
+  repo: string,
+  number: number,
+): Promise<void> {
+  await fetchJSON<{ status: string }>(
+    `/api/prs/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${number}/sync`,
+    { method: "POST" },
+  );
+}
+
+export async function syncRepo(owner: string, repo: string): Promise<void> {
+  await fetchJSON<{ status: string }>(
+    `/api/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/sync`,
+    { method: "POST" },
+  );
+}
+
 export interface BatchTarget {
   owner: string;
   repo: string;

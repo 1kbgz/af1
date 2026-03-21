@@ -6,6 +6,8 @@ import {
   mergePullRequests,
   closePullRequests,
   approvePullRequests,
+  syncPR,
+  syncRepo,
   type PullRequest,
   type AppConfig,
 } from "./api.js";
@@ -542,6 +544,37 @@ function renderDashboard(): void {
       }
     });
   });
+  container.querySelectorAll<HTMLElement>(".inline-sync").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const { owner, repo, number } = btn.dataset;
+      btn.classList.add("working");
+      try {
+        await syncPR(owner!, repo!, parseInt(number!));
+        allPRs = await getPullRequests();
+        renderDashboard();
+      } catch (err) {
+        alert(`Sync failed: ${err}`);
+      }
+    });
+  });
+  container.querySelectorAll<HTMLElement>(".group-sync-btn").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const label = btn.dataset.groupLabel!;
+      const slash = label.indexOf("/");
+      const owner = label.substring(0, slash);
+      const repo = label.substring(slash + 1);
+      btn.classList.add("working");
+      try {
+        await syncRepo(owner, repo);
+        allPRs = await getPullRequests();
+        renderDashboard();
+      } catch (err) {
+        alert(`Repo sync failed: ${err}`);
+      }
+    });
+  });
 }
 
 function sortIndicator(col: typeof sortColumn): string {
@@ -556,6 +589,7 @@ function renderTable(prs: PullRequest[], groupLabel: string | null): string {
         <label class="group-select-label"><input type="checkbox" class="group-select-all" data-group="${esc(groupId)}" /> </label>
         <span class="group-name">${esc(groupLabel)}</span>
         <span class="group-count">${prs.length}</span>
+        ${groupBy === "repo" ? `<button class="inline-btn group-sync-btn" data-group-label="${esc(groupLabel)}" title="Sync repo">&#x21bb;</button>` : ""}
        </div>`
     : "";
 
@@ -573,7 +607,7 @@ function renderTable(prs: PullRequest[], groupLabel: string | null): string {
         pr.ci_status?.toUpperCase() === "SUCCESS" &&
         pr.mergeable?.toUpperCase() === "MERGEABLE" &&
         !pr.draft;
-      const actions = `<span class="inline-actions">${canMerge ? `<button class="inline-btn inline-merge" data-owner="${esc(pr.repo_owner)}" data-repo="${esc(pr.repo_name)}" data-number="${pr.number}" title="Merge">&#x2714;</button>` : ""}<button class="inline-btn inline-approve" data-owner="${esc(pr.repo_owner)}" data-repo="${esc(pr.repo_name)}" data-number="${pr.number}" title="Approve">&#x1F44D;</button><button class="inline-btn inline-close" data-owner="${esc(pr.repo_owner)}" data-repo="${esc(pr.repo_name)}" data-number="${pr.number}" title="Close">&#x2716;</button></span>`;
+      const actions = `<span class="inline-actions"><button class="inline-btn inline-sync" data-owner="${esc(pr.repo_owner)}" data-repo="${esc(pr.repo_name)}" data-number="${pr.number}" title="Sync">&#x21bb;</button>${canMerge ? `<button class="inline-btn inline-merge" data-owner="${esc(pr.repo_owner)}" data-repo="${esc(pr.repo_name)}" data-number="${pr.number}" title="Merge">&#x2714;</button>` : ""}<button class="inline-btn inline-approve" data-owner="${esc(pr.repo_owner)}" data-repo="${esc(pr.repo_name)}" data-number="${pr.number}" title="Approve">&#x1F44D;</button><button class="inline-btn inline-close" data-owner="${esc(pr.repo_owner)}" data-repo="${esc(pr.repo_name)}" data-number="${pr.number}" title="Close">&#x2716;</button></span>`;
 
       return `<tr class="pr-row ${canMerge ? "pr-row-ready" : ""}">
       <td class="td-check"><input type="checkbox" class="pr-checkbox" value="${esc(key)}" data-group="${esc(groupId)}" data-owner="${esc(pr.repo_owner)}" data-repo="${esc(pr.repo_name)}" data-number="${pr.number}" ${checked} /></td>
