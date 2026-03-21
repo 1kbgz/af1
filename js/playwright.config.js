@@ -23,7 +23,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "python tools/test_server.py",
+    command: "python -m af1.testing.test_server",
     url: "http://127.0.0.1:8510/api/health",
     reuseExistingServer: !process.env.CI,
     timeout: 30 * 1000,

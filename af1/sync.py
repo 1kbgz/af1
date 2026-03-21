@@ -9,6 +9,7 @@ import aiosqlite
 
 from .config import Config
 from .db import (
+    upsert_issue,
     upsert_pr_check_runs,
     upsert_pr_commits,
     upsert_pr_files,
@@ -65,11 +66,41 @@ async def sync_all_prs(db: aiosqlite.Connection, client: GitHubClient, config: C
     logger.info("PR sync complete: %d PRs processed", len(prs))
 
 
+async def sync_all_issues(db: aiosqlite.Connection, client: GitHubClient, config: Config):
+    """Full sync: fetch open issues for all watched authors, plus assigned issues."""
+    logger.info("Starting issue sync for authors: %s", config.watched_authors)
+
+    issues = await client.fetch_open_issues_for_authors(config.watched_authors)
+    logger.info("Fetched %d open issues from watched authors", len(issues))
+
+    # Also fetch issues assigned to the primary user
+    if config.watched_authors:
+        assigned = await client.fetch_assigned_issues(config.watched_authors[0])
+        logger.info("Fetched %d assigned issues", len(assigned))
+        seen = {(i["repo_owner"], i["repo_name"], i["number"]) for i in issues}
+        for issue in assigned:
+            key = (issue["repo_owner"], issue["repo_name"], issue["number"])
+            if key not in seen:
+                issues.append(issue)
+                seen.add(key)
+
+    for issue in issues:
+        try:
+            await upsert_issue(db, issue)
+            await db.commit()
+            logger.debug("Synced issue %s/%s#%d", issue["repo_owner"], issue["repo_name"], issue["number"])
+        except Exception:
+            logger.exception("Failed to sync issue %s/%s#%d", issue["repo_owner"], issue["repo_name"], issue["number"])
+
+    logger.info("Issue sync complete: %d issues processed", len(issues))
+
+
 async def sync_loop(db: aiosqlite.Connection, client: GitHubClient, config: Config, stop_event: asyncio.Event):
     """Run sync_all_prs on a recurring schedule."""
     while not stop_event.is_set():
         try:
             await sync_all_prs(db, client, config)
+            await sync_all_issues(db, client, config)
         except Exception:
             logger.exception("Sync loop error")
         try:

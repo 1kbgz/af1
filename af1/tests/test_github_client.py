@@ -247,6 +247,26 @@ class TestRestEndpoints:
         result = await client.close_pull_request("org", "repo", 1)
         assert result["success"] is False
 
+    async def test_approve_pull_request_success(self):
+        client = GitHubClient("token")
+        mock_resp = Mock()
+        mock_resp.status_code = 200
+        client._client.post = AsyncMock(return_value=mock_resp)
+
+        result = await client.approve_pull_request("org", "repo", 1)
+        assert result == {"success": True}
+
+    async def test_approve_pull_request_failure(self):
+        client = GitHubClient("token")
+        mock_resp = Mock()
+        mock_resp.status_code = 422
+        mock_resp.json.return_value = {"message": "Cannot approve own PR"}
+        client._client.post = AsyncMock(return_value=mock_resp)
+
+        result = await client.approve_pull_request("org", "repo", 1)
+        assert result["success"] is False
+        assert "Cannot approve own PR" in result["error"]
+
     async def test_get_authenticated_user(self):
         client = GitHubClient("token")
         mock_resp = Mock()

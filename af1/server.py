@@ -20,9 +20,9 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from . import __version__
 from .config import Config
-from .db import get_db, get_open_prs, get_pr, get_pr_checks, get_pr_commits, get_pr_files
+from .db import get_db, get_issue, get_open_issues, get_open_prs, get_pr, get_pr_checks, get_pr_commits, get_pr_files
 from .github_client import GitHubClient
-from .sync import sync_all_prs, sync_loop
+from .sync import sync_all_issues, sync_all_prs, sync_loop
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +84,7 @@ async def api_sync(request: Request) -> JSONResponse:
     config: Config = request.app.state.config
     try:
         await sync_all_prs(db, client, config)
+        await sync_all_issues(db, client, config)
         return JSONResponse({"status": "ok"})
     except Exception as e:
         logger.exception("Manual sync failed")
@@ -124,6 +125,43 @@ async def api_batch_close(request: Request) -> JSONResponse:
         result = await client.close_pull_request(owner, repo, int(number))
         results.append({"owner": owner, "repo": repo, "number": number, **result})
     return JSONResponse(results)
+
+
+async def api_batch_approve(request: Request) -> JSONResponse:
+    """Batch approve PRs. Expects JSON body: {"targets": [{"owner", "repo", "number"}, ...]}."""
+    client: GitHubClient = request.app.state.github_client
+    body = await request.json()
+    targets = body.get("targets", [])
+    results = []
+    for t in targets:
+        owner = t.get("owner", "")
+        repo = t.get("repo", "")
+        number = t.get("number", 0)
+        if not owner or not repo or not number:
+            results.append({"owner": owner, "repo": repo, "number": number, "success": False, "error": "Missing fields"})
+            continue
+        result = await client.approve_pull_request(owner, repo, int(number))
+        results.append({"owner": owner, "repo": repo, "number": number, **result})
+    return JSONResponse(results)
+
+
+async def api_issues(request: Request) -> JSONResponse:
+    db = request.app.state.db
+    authors_param = request.query_params.get("authors")
+    authors = [a.strip() for a in authors_param.split(",") if a.strip()] if authors_param else None
+    issues = await get_open_issues(db, authors)
+    return JSONResponse(issues)
+
+
+async def api_issue_detail(request: Request) -> JSONResponse:
+    db = request.app.state.db
+    owner = request.path_params["owner"]
+    repo = request.path_params["repo"]
+    number = int(request.path_params["number"])
+    issue = await get_issue(db, owner, repo, number)
+    if not issue:
+        return JSONResponse({"error": "Issue not found"}, status_code=404)
+    return JSONResponse(issue)
 
 
 # --- App lifecycle ---
@@ -168,7 +206,10 @@ def create_routes() -> list:
         Route("/api/prs", api_pull_requests),
         Route("/api/prs/merge", api_batch_merge, methods=["POST"]),
         Route("/api/prs/close", api_batch_close, methods=["POST"]),
+        Route("/api/prs/approve", api_batch_approve, methods=["POST"]),
         Route("/api/prs/{owner}/{repo}/{number:int}", api_pr_detail),
+        Route("/api/issues", api_issues),
+        Route("/api/issues/{owner}/{repo}/{number:int}", api_issue_detail),
         Route("/api/sync", api_sync, methods=["POST"]),
     ]
 

@@ -81,6 +81,28 @@ CREATE TABLE IF NOT EXISTS sync_state (
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS issues (
+    id INTEGER PRIMARY KEY,
+    node_id TEXT UNIQUE NOT NULL,
+    repo_owner TEXT NOT NULL,
+    repo_name TEXT NOT NULL,
+    number INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    body TEXT,
+    state TEXT NOT NULL,
+    author TEXT NOT NULL,
+    author_avatar TEXT,
+    labels TEXT,  -- JSON array
+    assignees TEXT,  -- JSON array of logins
+    comment_count INTEGER DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    closed_at TEXT,
+    url TEXT NOT NULL,
+    synced_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(repo_owner, repo_name, number)
+);
+
 CREATE INDEX IF NOT EXISTS idx_pr_repo ON pull_requests(repo_owner, repo_name);
 CREATE INDEX IF NOT EXISTS idx_pr_author ON pull_requests(author);
 CREATE INDEX IF NOT EXISTS idx_pr_state ON pull_requests(state);
@@ -88,6 +110,10 @@ CREATE INDEX IF NOT EXISTS idx_pr_updated ON pull_requests(updated_at);
 CREATE INDEX IF NOT EXISTS idx_pr_commits_pr ON pr_commits(pr_id);
 CREATE INDEX IF NOT EXISTS idx_pr_files_pr ON pr_files(pr_id);
 CREATE INDEX IF NOT EXISTS idx_pr_checks_pr ON pr_check_runs(pr_id);
+CREATE INDEX IF NOT EXISTS idx_issue_repo ON issues(repo_owner, repo_name);
+CREATE INDEX IF NOT EXISTS idx_issue_author ON issues(author);
+CREATE INDEX IF NOT EXISTS idx_issue_state ON issues(state);
+CREATE INDEX IF NOT EXISTS idx_issue_updated ON issues(updated_at);
 """
 
 
@@ -231,14 +257,79 @@ async def get_pr_checks(db: aiosqlite.Connection, pr_id: int) -> list[dict]:
     return [_row_to_dict(r) for r in await cursor.fetchall()]
 
 
+async def upsert_issue(db: aiosqlite.Connection, issue: dict) -> int:
+    labels = json.dumps(issue.get("labels", []))
+    assignees = json.dumps(issue.get("assignees", []))
+    await db.execute(
+        """INSERT INTO issues
+           (id, node_id, repo_owner, repo_name, number, title, body, state, author, author_avatar,
+            labels, assignees, comment_count, created_at, updated_at, closed_at, url, synced_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+           ON CONFLICT(repo_owner, repo_name, number) DO UPDATE SET
+             title=excluded.title, body=excluded.body, state=excluded.state,
+             labels=excluded.labels, assignees=excluded.assignees,
+             comment_count=excluded.comment_count,
+             updated_at=excluded.updated_at, closed_at=excluded.closed_at,
+             url=excluded.url, synced_at=datetime('now')""",
+        (
+            issue["id"],
+            issue["node_id"],
+            issue["repo_owner"],
+            issue["repo_name"],
+            issue["number"],
+            issue["title"],
+            issue.get("body"),
+            issue["state"],
+            issue["author"],
+            issue.get("author_avatar"),
+            labels,
+            assignees,
+            issue.get("comment_count", 0),
+            issue["created_at"],
+            issue["updated_at"],
+            issue.get("closed_at"),
+            issue["url"],
+        ),
+    )
+    cursor = await db.execute(
+        "SELECT id FROM issues WHERE repo_owner=? AND repo_name=? AND number=?",
+        (issue["repo_owner"], issue["repo_name"], issue["number"]),
+    )
+    row = await cursor.fetchone()
+    return row["id"]
+
+
+async def get_open_issues(db: aiosqlite.Connection, authors: list[str] | None = None) -> list[dict]:
+    if authors:
+        placeholders = ",".join("?" for _ in authors)
+        cursor = await db.execute(
+            f"SELECT * FROM issues WHERE state='OPEN' AND author IN ({placeholders}) ORDER BY updated_at DESC",
+            authors,
+        )
+    else:
+        cursor = await db.execute("SELECT * FROM issues WHERE state='OPEN' ORDER BY updated_at DESC")
+    rows = await cursor.fetchall()
+    return [_row_to_dict(r) for r in rows]
+
+
+async def get_issue(db: aiosqlite.Connection, owner: str, repo: str, number: int) -> dict | None:
+    cursor = await db.execute(
+        "SELECT * FROM issues WHERE repo_owner=? AND repo_name=? AND number=?",
+        (owner, repo, number),
+    )
+    row = await cursor.fetchone()
+    return _row_to_dict(row) if row else None
+
+
 def _row_to_dict(row) -> dict:
     if row is None:
         return {}
     d = dict(row)
     # Parse JSON fields
-    if "labels" in d and isinstance(d["labels"], str):
-        try:
-            d["labels"] = json.loads(d["labels"])
-        except (json.JSONDecodeError, TypeError):
-            d["labels"] = []
+    for field in ("labels", "assignees"):
+        if field in d and isinstance(d[field], str):
+            try:
+                d[field] = json.loads(d[field])
+            except (json.JSONDecodeError, TypeError):
+                d[field] = []
     return d
