@@ -9,6 +9,9 @@ Mobile GitHub command center
 
 ## Overview
 
+> [!WARNING]
+> This project is in early alpha. Expect breaking changes, rough edges, and incomplete features. Feedback and contributions are very welcome!
+
 [![Preview of af1 landing page](./docs/img/sample.png)](./docs/img/sample.png)
 
 > [!NOTE]
