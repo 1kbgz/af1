@@ -7,9 +7,9 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from af1.db import get_open_prs, get_pr_checks, get_pr_commits, get_pr_files
-from af1.sync import sync_all_prs, sync_loop
-from af1.tests.conftest import make_commits, make_pr, mock_github_client
+from af1.db import get_open_issues, get_open_prs, get_pr_checks, get_pr_commits, get_pr_files
+from af1.sync import sync_all_issues, sync_all_prs, sync_loop
+from af1.tests.conftest import make_commits, make_issue, make_pr, mock_github_client
 
 pytestmark = pytest.mark.asyncio(loop_scope="function")
 
@@ -141,3 +141,41 @@ class TestSyncLoop:
 
         await asyncio.wait_for(sync_loop(db, client, sample_config, stop_event), timeout=5.0)
         assert call_count >= 2
+
+
+class TestSyncAllIssues:
+    async def test_syncs_authored_issues(self, db, sample_config):
+        client = mock_github_client()
+        await sync_all_issues(db, client, sample_config)
+
+        issues = await get_open_issues(db)
+        assert len(issues) == 1
+        assert issues[0]["title"] == "Fix the widget bug"
+
+    async def test_syncs_assigned_issues(self, db, sample_config):
+        assigned_issue = make_issue(
+            id=2002,
+            node_id="I_assigned",
+            number=20,
+            title="Assigned issue",
+            author="otheruser",
+            url="https://github.com/testorg/testrepo/issues/20",
+        )
+        client = mock_github_client()
+        client.fetch_assigned_issues.return_value = [assigned_issue]
+
+        await sync_all_issues(db, client, sample_config)
+
+        issues = await get_open_issues(db)
+        assert len(issues) == 2
+
+    async def test_deduplicates_authored_and_assigned_issues(self, db, sample_config):
+        issue = make_issue()
+        client = mock_github_client()
+        client.fetch_open_issues_for_authors.return_value = [issue]
+        client.fetch_assigned_issues.return_value = [issue]
+
+        await sync_all_issues(db, client, sample_config)
+
+        issues = await get_open_issues(db)
+        assert len(issues) == 1

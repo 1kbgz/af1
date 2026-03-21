@@ -173,10 +173,55 @@ def mock_github_client():
     client.fetch_pr_commits = AsyncMock(return_value=make_commits())
     client.fetch_pr_files = AsyncMock(return_value=make_files())
     client.fetch_pr_check_runs = AsyncMock(return_value=make_checks())
+    client.fetch_open_issues_for_authors = AsyncMock(return_value=[make_issue()])
+    client.fetch_assigned_issues = AsyncMock(return_value=[])
     client.get_authenticated_user = AsyncMock(
         return_value={"login": "testuser", "name": "Test User", "avatar_url": "https://avatars.example.com/u/1"}
     )
     client.merge_pull_request = AsyncMock(return_value={"success": True})
     client.close_pull_request = AsyncMock(return_value={"success": True})
+    client.approve_pull_request = AsyncMock(return_value={"success": True})
     client.close = AsyncMock()
     return client
+
+
+def make_issue(
+    *,
+    id: int = 2001,
+    node_id: str = "I_node1",
+    repo_owner: str = "testorg",
+    repo_name: str = "testrepo",
+    number: int = 10,
+    title: str = "Fix the widget bug",
+    body: str = "The widget is broken.",
+    state: str = "OPEN",
+    author: str = "testuser",
+    author_avatar: str = "https://avatars.example.com/u/1",
+    labels: list | None = None,
+    assignees: list | None = None,
+    comment_count: int = 3,
+    created_at: str = "2025-01-15T10:00:00Z",
+    updated_at: str = "2025-01-16T12:00:00Z",
+    closed_at: str | None = None,
+    url: str = "https://github.com/testorg/testrepo/issues/10",
+) -> dict:
+    """Create a sample issue dict matching GitHubClient._normalize_issue output."""
+    return {
+        "id": id,
+        "node_id": node_id,
+        "repo_owner": repo_owner,
+        "repo_name": repo_name,
+        "number": number,
+        "title": title,
+        "body": body,
+        "state": state,
+        "author": author,
+        "author_avatar": author_avatar,
+        "labels": labels or [{"name": "bug", "color": "d73a4a"}],
+        "assignees": assignees or ["testuser"],
+        "comment_count": comment_count,
+        "created_at": created_at,
+        "updated_at": updated_at,
+        "closed_at": closed_at,
+        "url": url,
+    }

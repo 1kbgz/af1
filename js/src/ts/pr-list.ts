@@ -5,6 +5,7 @@ import {
   getConfig,
   mergePullRequests,
   closePullRequests,
+  approvePullRequests,
   type PullRequest,
   type AppConfig,
 } from "./api.js";
@@ -24,6 +25,8 @@ let filterText = "";
 let filterAuthors: Set<string> = new Set();
 let filterRepos: Set<string> = new Set();
 let filterCIs: Set<string> = new Set();
+let filterLabels: Set<string> = new Set();
+let filterReviews: Set<string> = new Set();
 let selectedPRs = new Set<string>(); // "owner/repo#number"
 let groupBy: "none" | "repo" | "author" = "repo";
 let sortColumn: "number" | "author" | "created" | "updated" = "number";
@@ -105,6 +108,8 @@ export async function renderPRList(container: HTMLElement): Promise<void> {
       <div id="ms-author-placeholder"></div>
       <div id="ms-repo-placeholder"></div>
       <div id="ms-ci-placeholder"></div>
+      <div id="ms-label-placeholder"></div>
+      <div id="ms-review-placeholder"></div>
       <select id="group-by">
         <option value="repo">Group by repo</option>
         <option value="author">Group by author</option>
@@ -114,6 +119,7 @@ export async function renderPRList(container: HTMLElement): Promise<void> {
     <div id="batch-bar" class="batch-bar hidden">
       <span id="batch-count">0 selected</span>
       <button id="batch-merge" class="batch-btn batch-btn-merge" disabled>Merge selected</button>
+      <button id="batch-approve" class="batch-btn batch-btn-approve">Approve selected</button>
       <button id="batch-close" class="batch-btn batch-btn-close">Close selected</button>
       <button id="batch-clear" class="batch-btn batch-btn-clear">Clear selection</button>
     </div>
@@ -145,6 +151,21 @@ export async function renderPRList(container: HTMLElement): Promise<void> {
     PENDING: "CI pending",
     NONE: "No CI",
   };
+  const labels = [
+    ...new Set(allPRs.flatMap((pr) => (pr.labels || []).map((l) => l.name))),
+  ].sort();
+  const reviewOptions = [
+    "APPROVED",
+    "CHANGES_REQUESTED",
+    "REVIEW_REQUIRED",
+    "NONE",
+  ];
+  const reviewLabels: Record<string, string> = {
+    APPROVED: "Approved",
+    CHANGES_REQUESTED: "Changes requested",
+    REVIEW_REQUIRED: "Review required",
+    NONE: "No review",
+  };
 
   // Insert multi-selects
   document.getElementById("ms-author-placeholder")!.outerHTML =
@@ -169,6 +190,22 @@ export async function renderPRList(container: HTMLElement): Promise<void> {
     filterCIs,
     renderDashboard,
   );
+  document.getElementById("ms-label-placeholder")!.outerHTML =
+    createMultiSelect(
+      "ms-label",
+      "Labels",
+      labels,
+      filterLabels,
+      renderDashboard,
+    );
+  document.getElementById("ms-review-placeholder")!.outerHTML =
+    createMultiSelect(
+      "ms-review",
+      "Review",
+      reviewOptions,
+      filterReviews,
+      renderDashboard,
+    );
 
   initMultiSelect(
     "ms-author",
@@ -183,6 +220,14 @@ export async function renderPRList(container: HTMLElement): Promise<void> {
     ciOptions,
     filterCIs,
     (v) => ciLabels[v] || v,
+    renderDashboard,
+  );
+  initMultiSelect("ms-label", labels, filterLabels, (v) => v, renderDashboard);
+  initMultiSelect(
+    "ms-review",
+    reviewOptions,
+    filterReviews,
+    (v) => reviewLabels[v] || v,
     renderDashboard,
   );
 
@@ -206,6 +251,9 @@ export async function renderPRList(container: HTMLElement): Promise<void> {
   document
     .getElementById("batch-merge")!
     .addEventListener("click", handleBatchMerge);
+  document
+    .getElementById("batch-approve")!
+    .addEventListener("click", handleBatchApprove);
   document
     .getElementById("batch-close")!
     .addEventListener("click", handleBatchClose);
@@ -278,6 +326,21 @@ function getFiltered(): PullRequest[] {
       for (const ci of filterCIs) {
         if (ci === "NONE" && !pr.ci_status) return true;
         if (status === ci) return true;
+      }
+      return false;
+    });
+  }
+  if (filterLabels.size > 0) {
+    filtered = filtered.filter((pr) =>
+      (pr.labels || []).some((l) => filterLabels.has(l.name)),
+    );
+  }
+  if (filterReviews.size > 0) {
+    filtered = filtered.filter((pr) => {
+      const review = pr.review_decision?.toUpperCase() || "NONE";
+      for (const r of filterReviews) {
+        if (r === "NONE" && !pr.review_decision) return true;
+        if (review === r) return true;
       }
       return false;
     });
@@ -423,6 +486,62 @@ function renderDashboard(): void {
       renderDashboard();
     });
   });
+
+  // Inline quick action handlers
+  container.querySelectorAll<HTMLElement>(".inline-merge").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const { owner, repo, number } = btn.dataset;
+      btn.classList.add("working");
+      try {
+        const results = await mergePullRequests([
+          { owner: owner!, repo: repo!, number: parseInt(number!) },
+        ]);
+        if (results[0] && !results[0].success)
+          alert(`Merge failed: ${results[0].error}`);
+        allPRs = await getPullRequests();
+        renderDashboard();
+      } catch (err) {
+        alert(`Merge failed: ${err}`);
+      }
+    });
+  });
+  container.querySelectorAll<HTMLElement>(".inline-approve").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const { owner, repo, number } = btn.dataset;
+      btn.classList.add("working");
+      try {
+        const results = await approvePullRequests([
+          { owner: owner!, repo: repo!, number: parseInt(number!) },
+        ]);
+        if (results[0] && !results[0].success)
+          alert(`Approve failed: ${results[0].error}`);
+        allPRs = await getPullRequests();
+        renderDashboard();
+      } catch (err) {
+        alert(`Approve failed: ${err}`);
+      }
+    });
+  });
+  container.querySelectorAll<HTMLElement>(".inline-close").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const { owner, repo, number } = btn.dataset;
+      btn.classList.add("working");
+      try {
+        const results = await closePullRequests([
+          { owner: owner!, repo: repo!, number: parseInt(number!) },
+        ]);
+        if (results[0] && !results[0].success)
+          alert(`Close failed: ${results[0].error}`);
+        allPRs = await getPullRequests();
+        renderDashboard();
+      } catch (err) {
+        alert(`Close failed: ${err}`);
+      }
+    });
+  });
 }
 
 function sortIndicator(col: typeof sortColumn): string {
@@ -454,6 +573,7 @@ function renderTable(prs: PullRequest[], groupLabel: string | null): string {
         pr.ci_status?.toUpperCase() === "SUCCESS" &&
         pr.mergeable?.toUpperCase() === "MERGEABLE" &&
         !pr.draft;
+      const actions = `<span class="inline-actions">${canMerge ? `<button class="inline-btn inline-merge" data-owner="${esc(pr.repo_owner)}" data-repo="${esc(pr.repo_name)}" data-number="${pr.number}" title="Merge">&#x2714;</button>` : ""}<button class="inline-btn inline-approve" data-owner="${esc(pr.repo_owner)}" data-repo="${esc(pr.repo_name)}" data-number="${pr.number}" title="Approve">&#x1F44D;</button><button class="inline-btn inline-close" data-owner="${esc(pr.repo_owner)}" data-repo="${esc(pr.repo_name)}" data-number="${pr.number}" title="Close">&#x2716;</button></span>`;
 
       return `<tr class="pr-row ${canMerge ? "pr-row-ready" : ""}">
       <td class="td-check"><input type="checkbox" class="pr-checkbox" value="${esc(key)}" data-group="${esc(groupId)}" data-owner="${esc(pr.repo_owner)}" data-repo="${esc(pr.repo_name)}" data-number="${pr.number}" ${checked} /></td>
@@ -472,6 +592,7 @@ function renderTable(prs: PullRequest[], groupLabel: string | null): string {
       <td class="td-stats"><span class="stat-add">+${pr.additions}</span> <span class="stat-del">-${pr.deletions}</span></td>
       <td class="td-time" title="${esc(pr.created_at)}">${timeAgo(pr.created_at)}</td>
       <td class="td-time" title="${esc(pr.updated_at)}">${timeAgo(pr.updated_at)}</td>
+      <td class="td-actions">${actions}</td>
     </tr>`;
     })
     .join("");
@@ -488,6 +609,7 @@ function renderTable(prs: PullRequest[], groupLabel: string | null): string {
           <th class="th-stats">Changes</th>
           <th class="th-time sortable-th" data-sort="created">Created${sortIndicator("created")}</th>
           <th class="th-time sortable-th" data-sort="updated">Updated${sortIndicator("updated")}</th>
+          <th class="th-actions">Actions</th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
@@ -572,6 +694,33 @@ async function handleBatchMerge(): Promise<void> {
     renderDashboard();
   } catch (e) {
     alert(`Batch merge failed: ${e}`);
+  } finally {
+    bar.classList.remove("batch-working");
+  }
+}
+
+async function handleBatchApprove(): Promise<void> {
+  const selected = getSelectedPRs();
+  const targets = selected.map((pr) => ({
+    owner: pr.repo_owner,
+    repo: pr.repo_name,
+    number: pr.number,
+  }));
+  const bar = document.getElementById("batch-bar")!;
+  bar.classList.add("batch-working");
+  try {
+    const results = await approvePullRequests(targets);
+    const failed = results.filter((r) => !r.success);
+    if (failed.length > 0) {
+      alert(
+        `Approved ${results.length - failed.length} PRs. ${failed.length} failed:\n${failed.map((f) => f.error || "Unknown error").join("\n")}`,
+      );
+    }
+    selectedPRs.clear();
+    allPRs = await getPullRequests();
+    renderDashboard();
+  } catch (e) {
+    alert(`Batch approve failed: ${e}`);
   } finally {
     bar.classList.remove("batch-working");
   }

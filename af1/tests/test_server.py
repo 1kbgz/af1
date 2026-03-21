@@ -7,9 +7,9 @@ from unittest.mock import AsyncMock
 import pytest
 
 from af1.config import Config
-from af1.db import get_db, upsert_pr_check_runs, upsert_pr_commits, upsert_pr_files, upsert_pull_request
+from af1.db import get_db, upsert_issue, upsert_pr_check_runs, upsert_pr_commits, upsert_pr_files, upsert_pull_request
 from af1.server import create_app, create_routes
-from af1.tests.conftest import make_checks, make_commits, make_files, make_pr, mock_github_client
+from af1.tests.conftest import make_checks, make_commits, make_files, make_issue, make_pr, mock_github_client
 
 pytestmark = pytest.mark.asyncio(loop_scope="function")
 
@@ -35,10 +35,13 @@ def app(test_config):
     from starlette.routing import Route
 
     from af1.server import (
+        api_batch_approve,
         api_batch_close,
         api_batch_merge,
         api_config,
         api_health,
+        api_issue_detail,
+        api_issues,
         api_me,
         api_pr_detail,
         api_pull_requests,
@@ -52,7 +55,10 @@ def app(test_config):
         Route("/api/prs", api_pull_requests),
         Route("/api/prs/merge", api_batch_merge, methods=["POST"]),
         Route("/api/prs/close", api_batch_close, methods=["POST"]),
+        Route("/api/prs/approve", api_batch_approve, methods=["POST"]),
         Route("/api/prs/{owner}/{repo}/{number:int}", api_pr_detail),
+        Route("/api/issues", api_issues),
+        Route("/api/issues/{owner}/{repo}/{number:int}", api_issue_detail),
         Route("/api/sync", api_sync, methods=["POST"]),
     ]
 
@@ -238,6 +244,40 @@ class TestBatchClose:
         assert data[0]["success"] is False
 
 
+class TestBatchApprove:
+    async def test_batch_approve_success(self, app, client):
+        app.state.github_client = mock_github_client()
+        resp = await client.post(
+            "/api/prs/approve",
+            json={"targets": [{"owner": "org", "repo": "repo", "number": 1}]},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 1
+        assert data[0]["success"] is True
+
+    async def test_batch_approve_missing_fields(self, app, client):
+        app.state.github_client = mock_github_client()
+        resp = await client.post(
+            "/api/prs/approve",
+            json={"targets": [{"owner": "", "repo": "repo", "number": 1}]},
+        )
+        data = resp.json()
+        assert data[0]["success"] is False
+        assert "Missing fields" in data[0]["error"]
+
+    async def test_batch_approve_multiple(self, app, client):
+        app.state.github_client = mock_github_client()
+        targets = [
+            {"owner": "org", "repo": "repo1", "number": 1},
+            {"owner": "org", "repo": "repo2", "number": 2},
+        ]
+        resp = await client.post("/api/prs/approve", json={"targets": targets})
+        data = resp.json()
+        assert len(data) == 2
+        assert all(r["success"] for r in data)
+
+
 class TestSyncEndpoint:
     async def test_sync_success(self, app, client, tmp_path):
         db = await get_db(tmp_path / "test.db")
@@ -282,7 +322,80 @@ class TestCreateApp:
         assert "/api/prs" in route_paths
         assert "/api/prs/merge" in route_paths
         assert "/api/prs/close" in route_paths
+        assert "/api/issues" in route_paths
         assert "/api/sync" in route_paths
+
+
+class TestIssuesEndpoint:
+    async def test_issues_empty(self, app, client, tmp_path):
+        db = await get_db(tmp_path / "test.db")
+        app.state.db = db
+        try:
+            resp = await client.get("/api/issues")
+            assert resp.status_code == 200
+            assert resp.json() == []
+        finally:
+            await db.close()
+
+    async def test_issues_returns_data(self, app, client, tmp_path):
+        db = await get_db(tmp_path / "test.db")
+        app.state.db = db
+        try:
+            issue = make_issue()
+            await upsert_issue(db, issue)
+            await db.commit()
+
+            resp = await client.get("/api/issues")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert len(data) == 1
+            assert data[0]["title"] == "Fix the widget bug"
+        finally:
+            await db.close()
+
+    async def test_issues_filters_by_authors(self, app, client, tmp_path):
+        db = await get_db(tmp_path / "test.db")
+        app.state.db = db
+        try:
+            i1 = make_issue(id=2001, node_id="I_1", number=1, author="alice", url="https://github.com/org/repo/issues/1")
+            i2 = make_issue(id=2002, node_id="I_2", number=2, author="bob", url="https://github.com/org/repo/issues/2")
+            await upsert_issue(db, i1)
+            await upsert_issue(db, i2)
+            await db.commit()
+
+            resp = await client.get("/api/issues?authors=alice")
+            data = resp.json()
+            assert len(data) == 1
+            assert data[0]["author"] == "alice"
+        finally:
+            await db.close()
+
+
+class TestIssueDetailEndpoint:
+    async def test_issue_detail_found(self, app, client, tmp_path):
+        db = await get_db(tmp_path / "test.db")
+        app.state.db = db
+        try:
+            issue = make_issue()
+            await upsert_issue(db, issue)
+            await db.commit()
+
+            resp = await client.get("/api/issues/testorg/testrepo/10")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["title"] == "Fix the widget bug"
+            assert data["comment_count"] == 3
+        finally:
+            await db.close()
+
+    async def test_issue_detail_not_found(self, app, client, tmp_path):
+        db = await get_db(tmp_path / "test.db")
+        app.state.db = db
+        try:
+            resp = await client.get("/api/issues/nonexistent/repo/999")
+            assert resp.status_code == 404
+        finally:
+            await db.close()
 
 
 class TestNoCacheMiddleware:

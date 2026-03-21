@@ -146,3 +146,49 @@ export async function closePullRequests(
     body: JSON.stringify({ targets }),
   });
 }
+
+export async function approvePullRequests(
+  targets: BatchTarget[],
+): Promise<BatchResult[]> {
+  return fetchJSON<BatchResult[]>("/api/prs/approve", {
+    method: "POST",
+    body: JSON.stringify({ targets }),
+  });
+}
+
+export interface Issue {
+  id: number;
+  node_id: string;
+  repo_owner: string;
+  repo_name: string;
+  number: number;
+  title: string;
+  body: string | null;
+  state: string;
+  author: string;
+  author_avatar: string | null;
+  labels: Array<{ name: string; color: string }>;
+  assignees: string[];
+  comment_count: number;
+  created_at: string;
+  updated_at: string;
+  closed_at: string | null;
+  url: string;
+}
+
+export async function getIssues(authors?: string[]): Promise<Issue[]> {
+  const params = authors?.length
+    ? `?authors=${encodeURIComponent(authors.join(","))}`
+    : "";
+  return fetchJSON<Issue[]>(`/api/issues${params}`);
+}
+
+export async function getIssueDetail(
+  owner: string,
+  repo: string,
+  number: number,
+): Promise<Issue> {
+  return fetchJSON<Issue>(
+    `/api/issues/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${number}`,
+  );
+}

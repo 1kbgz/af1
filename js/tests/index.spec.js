@@ -195,6 +195,48 @@ test.describe("Filtering", () => {
     await page.locator("body").click({ position: { x: 10, y: 10 } });
     await expect(page.locator("#ms-author-dropdown")).toBeHidden();
   });
+
+  test("label filter works", async ({ page }) => {
+    await page.goto("/");
+    await waitForDashboard(page);
+
+    await page.locator("#ms-label-btn").click();
+    const dropdown = page.locator("#ms-label-dropdown");
+    await expect(dropdown).toBeVisible();
+
+    // Select "bug" label — only PR #143 has it
+    await dropdown.locator('input[value="bug"]').check();
+    await expect(page.locator(".pr-row")).toHaveCount(1);
+    await expect(page.locator(".pr-row").first()).toContainText(
+      "responsive layout",
+    );
+  });
+
+  test("review status filter works", async ({ page }) => {
+    await page.goto("/");
+    await waitForDashboard(page);
+
+    await page.locator("#ms-review-btn").click();
+    const dropdown = page.locator("#ms-review-dropdown");
+    await expect(dropdown).toBeVisible();
+
+    // Select "APPROVED" — PR #142 and #88 are approved
+    await dropdown.locator('input[value="APPROVED"]').check();
+    await expect(page.locator(".pr-row")).toHaveCount(2);
+  });
+});
+
+test.describe("Inline Actions", () => {
+  test("inline action buttons appear on hover", async ({ page }) => {
+    await page.goto("/");
+    await waitForDashboard(page);
+
+    const firstRow = page.locator(".pr-row").first();
+    await firstRow.hover();
+    await expect(firstRow.locator(".inline-actions")).toBeVisible();
+    await expect(firstRow.locator(".inline-approve")).toBeVisible();
+    await expect(firstRow.locator(".inline-close")).toBeVisible();
+  });
 });
 
 test.describe("Grouping", () => {
@@ -277,6 +319,9 @@ test.describe("Batch Selection", () => {
     // Batch bar should now be visible
     await expect(page.locator("#batch-bar")).toBeVisible();
     await expect(page.locator("#batch-count")).toContainText("1 selected");
+    await expect(page.locator("#batch-merge")).toBeVisible();
+    await expect(page.locator("#batch-approve")).toBeVisible();
+    await expect(page.locator("#batch-close")).toBeVisible();
   });
 
   test("clear selection hides batch bar", async ({ page }) => {
@@ -486,5 +531,136 @@ test.describe("PR Table Content", () => {
     const labels = page.locator(".pr-row .label-tag");
     const count = await labels.count();
     expect(count).toBeGreaterThan(0);
+  });
+});
+
+// ===== Issue Tab Tests =====
+// The test server is seeded with 5 issues:
+// #100: acme/frontend - "Dark mode support" (alice)
+// #105: acme/frontend - "Accessibility audit for navigation" (bob)
+// #60:  acme/backend  - "API rate limiting design doc" (charlie)
+// #65:  acme/backend  - "Database connection pooling" (alice)
+// #20:  acme/infra    - "Set up monitoring for staging environment" (bob)
+
+async function waitForIssueList(page) {
+  await expect(page.locator(".issue-row").first()).toBeVisible({
+    timeout: 10000,
+  });
+}
+
+test.describe("Issues API", () => {
+  test("issues endpoint returns seeded issues", async ({ request }) => {
+    const resp = await request.get("/api/issues");
+    expect(resp.ok()).toBeTruthy();
+    const data = await resp.json();
+    expect(data.length).toBe(5);
+  });
+
+  test("issues endpoint filters by author", async ({ request }) => {
+    const resp = await request.get("/api/issues?authors=alice");
+    const data = await resp.json();
+    expect(data.length).toBe(2);
+    expect(data.every((i) => i.author === "alice")).toBeTruthy();
+  });
+
+  test("issue detail returns specific issue", async ({ request }) => {
+    const resp = await request.get("/api/issues/acme/frontend/100");
+    expect(resp.ok()).toBeTruthy();
+    const data = await resp.json();
+    expect(data.title).toBe("Dark mode support");
+    expect(data.comment_count).toBe(5);
+  });
+
+  test("issue detail returns 404 for missing issue", async ({ request }) => {
+    const resp = await request.get("/api/issues/acme/frontend/9999");
+    expect(resp.status()).toBe(404);
+  });
+});
+
+test.describe("Issues Tab Navigation", () => {
+  test("nav shows Issues link", async ({ page }) => {
+    await page.goto("/");
+    const navLink = page.locator('.nav-link[data-view="issue-list"]');
+    await expect(navLink).toBeVisible();
+    await expect(navLink).toContainText("Issues");
+  });
+
+  test("clicking Issues nav shows issue list", async ({ page }) => {
+    await page.goto("/");
+    await page.locator('.nav-link[data-view="issue-list"]').click();
+    await waitForIssueList(page);
+    const rows = page.locator(".issue-row");
+    expect(await rows.count()).toBe(5);
+  });
+
+  test("Issues nav link becomes active", async ({ page }) => {
+    await page.goto("/#/issues");
+    await waitForIssueList(page);
+    const navLink = page.locator('.nav-link[data-view="issue-list"]');
+    await expect(navLink).toHaveClass(/active/);
+  });
+});
+
+test.describe("Issue List Content", () => {
+  test("issue list shows stat cards", async ({ page }) => {
+    await page.goto("/#/issues");
+    await waitForIssueList(page);
+    const stats = page.locator(".stat-card");
+    expect(await stats.count()).toBeGreaterThanOrEqual(4);
+  });
+
+  test("issue rows show title and metadata", async ({ page }) => {
+    await page.goto("/#/issues");
+    await waitForIssueList(page);
+    const title = page.locator(".issue-row-link").first();
+    await expect(title).toBeVisible();
+  });
+
+  test("filter input filters issues", async ({ page }) => {
+    await page.goto("/#/issues");
+    await waitForIssueList(page);
+
+    await page.fill("#filter-input", "dark mode");
+    const rows = page.locator(".issue-row");
+    expect(await rows.count()).toBe(1);
+  });
+
+  test("group by repo groups issues", async ({ page }) => {
+    await page.goto("/#/issues");
+    await waitForIssueList(page);
+
+    await page.selectOption("#group-select", "repo");
+    const groups = page.locator(".group-header");
+    expect(await groups.count()).toBe(3);
+  });
+});
+
+test.describe("Issue Detail Navigation", () => {
+  test("clicking issue row navigates to detail", async ({ page }) => {
+    await page.goto("/#/issues");
+    await waitForIssueList(page);
+
+    await page.locator(".issue-row-link").first().click();
+    await expect(page.locator(".pr-detail-title")).toBeVisible({
+      timeout: 5000,
+    });
+  });
+
+  test("issue detail shows title and metadata", async ({ page }) => {
+    await page.goto("/#/issue/acme/frontend/100");
+    await expect(page.locator(".pr-detail-title")).toContainText(
+      "Dark mode support",
+      { timeout: 10000 },
+    );
+    await expect(page.locator(".pr-detail-subtitle")).toContainText("alice");
+  });
+
+  test("back button returns to issue list", async ({ page }) => {
+    await page.goto("/#/issue/acme/frontend/100");
+    await expect(page.locator(".pr-detail-title")).toBeVisible({
+      timeout: 10000,
+    });
+    await page.click("#back-btn");
+    await waitForIssueList(page);
   });
 });

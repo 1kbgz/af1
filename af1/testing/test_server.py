@@ -3,18 +3,18 @@
 from __future__ import annotations
 
 import asyncio
-import json
-import os
-import sys
 import tempfile
 from pathlib import Path
 
-# Ensure the af1 package is importable
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
 from af1.config import Config
-from af1.db import get_db, upsert_pr_check_runs, upsert_pr_commits, upsert_pr_files, upsert_pull_request
-
+from af1.db import (
+    get_db,
+    upsert_issue,
+    upsert_pr_check_runs,
+    upsert_pr_commits,
+    upsert_pr_files,
+    upsert_pull_request,
+)
 
 SAMPLE_PRS = [
     {
@@ -166,35 +166,119 @@ SAMPLE_PRS = [
 
 SAMPLE_COMMITS = {
     1001: [
-        {"sha": "aaa111", "message": "Initial dark mode implementation", "author": "alice", "authored_date": "2025-03-10T09:30:00Z", "url": "https://github.com/acme/frontend/commit/aaa111"},
-        {"sha": "aaa222", "message": "Add toggle switch component", "author": "alice", "authored_date": "2025-03-11T10:00:00Z", "url": "https://github.com/acme/frontend/commit/aaa222"},
-        {"sha": "aaa333", "message": "Store preference in localStorage", "author": "alice", "authored_date": "2025-03-12T14:00:00Z", "url": "https://github.com/acme/frontend/commit/aaa333"},
+        {
+            "sha": "aaa111",
+            "message": "Initial dark mode implementation",
+            "author": "alice",
+            "authored_date": "2025-03-10T09:30:00Z",
+            "url": "https://github.com/acme/frontend/commit/aaa111",
+        },
+        {
+            "sha": "aaa222",
+            "message": "Add toggle switch component",
+            "author": "alice",
+            "authored_date": "2025-03-11T10:00:00Z",
+            "url": "https://github.com/acme/frontend/commit/aaa222",
+        },
+        {
+            "sha": "aaa333",
+            "message": "Store preference in localStorage",
+            "author": "alice",
+            "authored_date": "2025-03-12T14:00:00Z",
+            "url": "https://github.com/acme/frontend/commit/aaa333",
+        },
     ],
     1002: [
-        {"sha": "bbb111", "message": "Fix media query breakpoints", "author": "bob", "authored_date": "2025-03-12T11:30:00Z", "url": "https://github.com/acme/frontend/commit/bbb111"},
+        {
+            "sha": "bbb111",
+            "message": "Fix media query breakpoints",
+            "author": "bob",
+            "authored_date": "2025-03-12T11:30:00Z",
+            "url": "https://github.com/acme/frontend/commit/bbb111",
+        },
     ],
     1003: [
-        {"sha": "ccc111", "message": "Bump alembic to 1.14", "author": "alice", "authored_date": "2025-03-14T08:30:00Z", "url": "https://github.com/acme/backend/commit/ccc111"},
-        {"sha": "ccc222", "message": "Update migration scripts", "author": "alice", "authored_date": "2025-03-15T09:00:00Z", "url": "https://github.com/acme/backend/commit/ccc222"},
+        {
+            "sha": "ccc111",
+            "message": "Bump alembic to 1.14",
+            "author": "alice",
+            "authored_date": "2025-03-14T08:30:00Z",
+            "url": "https://github.com/acme/backend/commit/ccc111",
+        },
+        {
+            "sha": "ccc222",
+            "message": "Update migration scripts",
+            "author": "alice",
+            "authored_date": "2025-03-15T09:00:00Z",
+            "url": "https://github.com/acme/backend/commit/ccc222",
+        },
     ],
     1004: [
-        {"sha": "ddd111", "message": "Add rate limiter middleware", "author": "charlie", "authored_date": "2025-03-15T13:30:00Z", "url": "https://github.com/acme/backend/commit/ddd111"},
-        {"sha": "ddd222", "message": "Add rate limit tests", "author": "charlie", "authored_date": "2025-03-16T10:00:00Z", "url": "https://github.com/acme/backend/commit/ddd222"},
+        {
+            "sha": "ddd111",
+            "message": "Add rate limiter middleware",
+            "author": "charlie",
+            "authored_date": "2025-03-15T13:30:00Z",
+            "url": "https://github.com/acme/backend/commit/ddd111",
+        },
+        {
+            "sha": "ddd222",
+            "message": "Add rate limit tests",
+            "author": "charlie",
+            "authored_date": "2025-03-16T10:00:00Z",
+            "url": "https://github.com/acme/backend/commit/ddd222",
+        },
     ],
     1005: [
-        {"sha": "eee111", "message": "Add Terraform module for staging", "author": "bob", "authored_date": "2025-03-16T07:45:00Z", "url": "https://github.com/acme/infra/commit/eee111"},
+        {
+            "sha": "eee111",
+            "message": "Add Terraform module for staging",
+            "author": "bob",
+            "authored_date": "2025-03-16T07:45:00Z",
+            "url": "https://github.com/acme/infra/commit/eee111",
+        },
     ],
 }
 
 SAMPLE_FILES = {
     1001: [
-        {"filename": "src/components/Settings.tsx", "status": "modified", "additions": 40, "deletions": 5, "patch": "@@ -10,5 +10,45 @@\n-// TODO: dark mode\n+import { DarkModeToggle } from './DarkModeToggle';\n+\n+export function Settings() {\n+  return <DarkModeToggle />\n+}"},
-        {"filename": "src/components/DarkModeToggle.tsx", "status": "added", "additions": 30, "deletions": 0, "patch": "@@ -0,0 +1,30 @@\n+export function DarkModeToggle() {\n+  // toggle implementation\n+}"},
-        {"filename": "src/styles/theme.css", "status": "modified", "additions": 15, "deletions": 7, "patch": "@@ -1,7 +1,15 @@\n-:root { --bg: #fff; }\n+:root { --bg: #fff; }\n+.dark { --bg: #1a1a2e; }"},
+        {
+            "filename": "src/components/Settings.tsx",
+            "status": "modified",
+            "additions": 40,
+            "deletions": 5,
+            "patch": "@@ -10,5 +10,45 @@\n-// TODO: dark mode\n+import { DarkModeToggle } from './DarkModeToggle';\n+\n+export function Settings() {\n+  return <DarkModeToggle />\n+}",
+        },
+        {
+            "filename": "src/components/DarkModeToggle.tsx",
+            "status": "added",
+            "additions": 30,
+            "deletions": 0,
+            "patch": "@@ -0,0 +1,30 @@\n+export function DarkModeToggle() {\n+  // toggle implementation\n+}",
+        },
+        {
+            "filename": "src/styles/theme.css",
+            "status": "modified",
+            "additions": 15,
+            "deletions": 7,
+            "patch": "@@ -1,7 +1,15 @@\n-:root { --bg: #fff; }\n+:root { --bg: #fff; }\n+.dark { --bg: #1a1a2e; }",
+        },
     ],
     1002: [
-        {"filename": "src/styles/responsive.css", "status": "modified", "additions": 20, "deletions": 8, "patch": "@@ -5,8 +5,20 @@\n-@media (max-width: 768px) {\n+@media (max-width: 768px) {\n+  .container { padding: 8px; }"},
-        {"filename": "src/layouts/MainLayout.tsx", "status": "modified", "additions": 3, "deletions": 0, "patch": "@@ -15,0 +16,3 @@\n+  className={`layout ${isMobile ? 'mobile' : ''}`}"},
+        {
+            "filename": "src/styles/responsive.css",
+            "status": "modified",
+            "additions": 20,
+            "deletions": 8,
+            "patch": "@@ -5,8 +5,20 @@\n-@media (max-width: 768px) {\n+@media (max-width: 768px) {\n+  .container { padding: 8px; }",
+        },
+        {
+            "filename": "src/layouts/MainLayout.tsx",
+            "status": "modified",
+            "additions": 3,
+            "deletions": 0,
+            "patch": "@@ -15,0 +16,3 @@\n+  className={`layout ${isMobile ? 'mobile' : ''}`}",
+        },
     ],
 }
 
@@ -219,6 +303,104 @@ SAMPLE_CHECKS = {
     ],
 }
 
+SAMPLE_ISSUES = [
+    {
+        "id": 2001,
+        "node_id": "I_node1",
+        "repo_owner": "acme",
+        "repo_name": "frontend",
+        "number": 100,
+        "title": "Dark mode support",
+        "body": "We should support dark mode across the application.",
+        "state": "OPEN",
+        "author": "alice",
+        "author_avatar": None,
+        "labels": [{"name": "enhancement", "color": "a2eeef"}, {"name": "frontend", "color": "7057ff"}],
+        "assignees": ["alice"],
+        "comment_count": 5,
+        "created_at": "2025-02-20T09:00:00Z",
+        "updated_at": "2025-03-10T08:00:00Z",
+        "closed_at": None,
+        "url": "https://github.com/acme/frontend/issues/100",
+    },
+    {
+        "id": 2002,
+        "node_id": "I_node2",
+        "repo_owner": "acme",
+        "repo_name": "frontend",
+        "number": 105,
+        "title": "Accessibility audit for navigation",
+        "body": "Run a full a11y audit on the main navigation. Ensure keyboard navigable.",
+        "state": "OPEN",
+        "author": "bob",
+        "author_avatar": None,
+        "labels": [{"name": "accessibility", "color": "0e8a16"}],
+        "assignees": ["bob", "alice"],
+        "comment_count": 2,
+        "created_at": "2025-03-01T10:00:00Z",
+        "updated_at": "2025-03-15T12:00:00Z",
+        "closed_at": None,
+        "url": "https://github.com/acme/frontend/issues/105",
+    },
+    {
+        "id": 2003,
+        "node_id": "I_node3",
+        "repo_owner": "acme",
+        "repo_name": "backend",
+        "number": 60,
+        "title": "API rate limiting design doc",
+        "body": "We need a design document for the rate limiting approach.",
+        "state": "OPEN",
+        "author": "charlie",
+        "author_avatar": None,
+        "labels": [{"name": "documentation", "color": "0075ca"}],
+        "assignees": ["charlie"],
+        "comment_count": 8,
+        "created_at": "2025-02-15T14:00:00Z",
+        "updated_at": "2025-03-14T16:00:00Z",
+        "closed_at": None,
+        "url": "https://github.com/acme/backend/issues/60",
+    },
+    {
+        "id": 2004,
+        "node_id": "I_node4",
+        "repo_owner": "acme",
+        "repo_name": "backend",
+        "number": 65,
+        "title": "Database connection pooling",
+        "body": "Implement connection pooling for PostgreSQL to improve throughput.",
+        "state": "OPEN",
+        "author": "alice",
+        "author_avatar": None,
+        "labels": [{"name": "enhancement", "color": "a2eeef"}, {"name": "performance", "color": "fbca04"}],
+        "assignees": [],
+        "comment_count": 0,
+        "created_at": "2025-03-05T08:00:00Z",
+        "updated_at": "2025-03-05T08:00:00Z",
+        "closed_at": None,
+        "url": "https://github.com/acme/backend/issues/65",
+    },
+    {
+        "id": 2005,
+        "node_id": "I_node5",
+        "repo_owner": "acme",
+        "repo_name": "infra",
+        "number": 20,
+        "title": "Set up monitoring for staging environment",
+        "body": "Once staging is deployed, configure Prometheus + Grafana monitoring.",
+        "state": "OPEN",
+        "author": "bob",
+        "author_avatar": None,
+        "labels": [{"name": "infrastructure", "color": "d4c5f9"}],
+        "assignees": ["bob"],
+        "comment_count": 3,
+        "created_at": "2025-03-10T07:00:00Z",
+        "updated_at": "2025-03-17T11:00:00Z",
+        "closed_at": None,
+        "url": "https://github.com/acme/infra/issues/20",
+    },
+]
+
 
 async def seed_database(db_path: Path):
     """Seed the test database with sample data."""
@@ -231,9 +413,11 @@ async def seed_database(db_path: Path):
             await upsert_pr_files(db, pr_id, SAMPLE_FILES[pr_id])
         if pr_id in SAMPLE_CHECKS:
             await upsert_pr_check_runs(db, pr_id, SAMPLE_CHECKS[pr_id])
+    for issue in SAMPLE_ISSUES:
+        await upsert_issue(db, issue)
     await db.commit()
     await db.close()
-    print(f"Seeded {len(SAMPLE_PRS)} PRs into {db_path}")
+    print(f"Seeded {len(SAMPLE_PRS)} PRs and {len(SAMPLE_ISSUES)} issues into {db_path}")
 
 
 def main():

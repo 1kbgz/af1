@@ -1,6 +1,8 @@
 /** af1 — Main entry point. */
 
 import { getMe, getConfig, triggerSync } from "./api.js";
+import { renderIssueDetail } from "./issue-detail.js";
+import { renderIssueList } from "./issue-list.js";
 import { renderPRList } from "./pr-list.js";
 import { renderPRDetail } from "./pr-detail.js";
 import { registerRoute, handleRoute } from "./router.js";
@@ -16,6 +18,29 @@ registerRoute(
     await renderPRDetail(container, owner, repo, parseInt(number, 10));
   },
 );
+
+registerRoute(/^\/issues$/, async (container) => {
+  await renderIssueList(container);
+});
+
+registerRoute(
+  /^\/issue\/([^/]+)\/([^/]+)\/(\d+)$/,
+  async (container, owner, repo, number) => {
+    await renderIssueDetail(container, owner, repo, parseInt(number, 10));
+  },
+);
+
+function updateActiveNav(): void {
+  const hash = window.location.hash.replace(/^#/, "") || "/";
+  document.querySelectorAll<HTMLElement>(".nav-link").forEach((link) => {
+    const view = link.dataset.view;
+    const isActive =
+      (view === "pr-list" && (hash === "/" || hash.startsWith("/pr/"))) ||
+      (view === "issue-list" &&
+        (hash === "/issues" || hash.startsWith("/issue/")));
+    link.classList.toggle("active", isActive);
+  });
+}
 
 // App initialization
 async function init(): Promise<void> {
@@ -66,11 +91,13 @@ async function init(): Promise<void> {
 
   // Handle route changes
   window.addEventListener("hashchange", () => {
+    updateActiveNav();
     handleRoute();
   });
 
   // Initial route
   if (loading) loading.classList.add("hidden");
+  updateActiveNav();
   await handleRoute();
 }
 
