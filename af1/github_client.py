@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
 from typing import Any
 
 import httpx
@@ -40,7 +42,19 @@ query($query: String!, $cursor: String) {
         repository { owner { login } name }
         labels(first: 20) { nodes { name color } }
         reviewDecision
-        commits(last: 1) {
+        allCommits: commits(first: 100) {
+          pageInfo { hasNextPage }
+          nodes {
+            commit {
+              oid
+              message
+              author { name user { login } }
+              authoredDate
+              url
+            }
+          }
+        }
+        lastCommit: commits(last: 1) {
           nodes {
             commit {
               statusCheckRollup {
@@ -103,6 +117,60 @@ query($query: String!, $cursor: String) {
 }
 """
 
+FETCH_SINGLE_PR_QUERY = """
+query($owner: String!, $repo: String!, $number: Int!) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $number) {
+      id
+      databaseId
+      number
+      title
+      body
+      state
+      isDraft
+      mergeable
+      additions
+      deletions
+      changedFiles
+      headRefName
+      headRefOid
+      baseRefName
+      baseRefOid
+      createdAt
+      updatedAt
+      mergedAt
+      closedAt
+      url
+      author { login avatarUrl }
+      repository { owner { login } name }
+      labels(first: 20) { nodes { name color } }
+      reviewDecision
+      allCommits: commits(first: 100) {
+        pageInfo { hasNextPage }
+        nodes {
+          commit {
+            oid
+            message
+            author { name user { login } }
+            authoredDate
+            url
+          }
+        }
+      }
+      lastCommit: commits(last: 1) {
+        nodes {
+          commit {
+            statusCheckRollup {
+              state
+            }
+          }
+        }
+      }
+    }
+  }
+}
+"""
+
 
 class GitHubClient:
     def __init__(self, token: str, github_host: str = "github.com"):
@@ -114,6 +182,7 @@ class GitHubClient:
         else:
             self._api_base = f"https://{github_host}/api/v3"
             self._graphql_url = f"https://{github_host}/api/graphql"
+        self._rest_delay = 0.1  # seconds between REST calls to avoid secondary rate limits
         self._client = httpx.AsyncClient(
             headers={
                 "Authorization": f"Bearer {token}",
@@ -124,6 +193,32 @@ class GitHubClient:
 
     async def close(self):
         await self._client.aclose()
+
+    async def _rest_get(self, url: str, **kwargs) -> httpx.Response:
+        """GET with retry on 403 (rate-limit / abuse detection) and pacing."""
+        if self._rest_delay > 0:
+            await asyncio.sleep(self._rest_delay)
+        max_retries = 3
+        for attempt in range(max_retries):
+            resp = await self._client.get(url, **kwargs)
+            if resp.status_code != 403 or attempt == max_retries - 1:
+                resp.raise_for_status()
+                return resp
+            # Determine wait time from headers
+            retry_after = resp.headers.get("retry-after")
+            if retry_after:
+                wait = int(retry_after)
+            else:
+                reset = resp.headers.get("x-ratelimit-reset")
+                if reset:
+                    wait = max(int(reset) - int(time.time()), 1)
+                else:
+                    wait = 2**attempt
+            logger.warning("Rate-limited on %s, retrying in %ds (attempt %d/%d)", url, wait, attempt + 1, max_retries)
+            await asyncio.sleep(wait)
+        # unreachable, but keeps type checkers happy
+        resp.raise_for_status()
+        return resp
 
     async def _graphql(self, query: str, variables: dict[str, Any] | None = None) -> dict:
         resp = await self._client.post(
@@ -220,6 +315,15 @@ class GitHubClient:
             cursor = search["pageInfo"]["endCursor"]
         return all_issues
 
+    async def fetch_single_pr(self, owner: str, repo: str, number: int) -> dict:
+        """Fetch a single PR by owner/repo/number via GraphQL."""
+        data = await self._graphql(
+            FETCH_SINGLE_PR_QUERY,
+            {"owner": owner, "repo": repo, "number": number},
+        )
+        node = data["repository"]["pullRequest"]
+        return self._normalize_pr(node)
+
     def _normalize_pr(self, node: dict) -> dict:
         """Convert GraphQL PR node to flat dict for the database."""
         author = node.get("author") or {}
@@ -227,13 +331,33 @@ class GitHubClient:
         owner = repo.get("owner", {})
         labels = [{"name": lbl["name"], "color": lbl["color"]} for lbl in (node.get("labels", {}).get("nodes") or [])]
 
-        # CI status from statusCheckRollup
+        # CI status from lastCommit alias (always the HEAD commit)
         ci_status = None
-        commits_nodes = (node.get("commits") or {}).get("nodes") or []
-        if commits_nodes:
-            rollup = (commits_nodes[-1].get("commit") or {}).get("statusCheckRollup")
+        last_commit_nodes = (node.get("lastCommit") or {}).get("nodes") or []
+        if last_commit_nodes:
+            rollup = (last_commit_nodes[-1].get("commit") or {}).get("statusCheckRollup")
             if rollup:
                 ci_status = rollup.get("state")  # SUCCESS, FAILURE, PENDING, ERROR
+
+        # Inline commits from allCommits alias
+        all_commits_data = node.get("allCommits") or {}
+        all_commits_nodes = all_commits_data.get("nodes") or []
+        inline_commits = []
+        for cn in all_commits_nodes:
+            c = cn["commit"]
+            author_name = None
+            if c.get("author"):
+                author_name = (c["author"].get("user") or {}).get("login") or c["author"].get("name")
+            inline_commits.append(
+                {
+                    "sha": c["oid"],
+                    "message": c["message"],
+                    "author": author_name,
+                    "authored_date": c.get("authoredDate"),
+                    "url": c.get("url"),
+                }
+            )
+        commits_has_next = (all_commits_data.get("pageInfo") or {}).get("hasNextPage", False)
 
         return {
             "id": node["databaseId"],
@@ -263,6 +387,8 @@ class GitHubClient:
             "merged_at": node.get("mergedAt"),
             "closed_at": node.get("closedAt"),
             "url": node["url"],
+            "commits": inline_commits,
+            "commits_complete": not commits_has_next,
         }
 
     def _normalize_issue(self, node: dict) -> dict:
@@ -333,11 +459,10 @@ class GitHubClient:
         files = []
         page = 1
         while True:
-            resp = await self._client.get(
+            resp = await self._rest_get(
                 f"{self._api_base}/repos/{owner}/{repo}/pulls/{number}/files",
                 params={"per_page": 100, "page": page},
             )
-            resp.raise_for_status()
             batch = resp.json()
             if not batch:
                 break
@@ -361,11 +486,10 @@ class GitHubClient:
         checks = []
         page = 1
         while True:
-            resp = await self._client.get(
+            resp = await self._rest_get(
                 f"{self._api_base}/repos/{owner}/{repo}/commits/{ref}/check-runs",
                 params={"per_page": 100, "page": page},
             )
-            resp.raise_for_status()
             data = resp.json()
             for cr in data.get("check_runs", []):
                 checks.append(

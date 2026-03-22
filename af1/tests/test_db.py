@@ -11,6 +11,7 @@ from af1.db import (
     get_pr_checks,
     get_pr_commits,
     get_pr_files,
+    get_pr_updated_state,
     upsert_pr_check_runs,
     upsert_pr_commits,
     upsert_pr_files,
@@ -212,6 +213,28 @@ class TestUpsertPrCheckRuns:
         assert len(result) == 1
         # Last one wins with INSERT OR REPLACE
         assert result[0]["conclusion"] == "success"
+
+
+class TestGetPrUpdatedState:
+    async def test_returns_none_for_missing_pr(self, db):
+        result = await get_pr_updated_state(db, "org", "repo", 999)
+        assert result is None
+
+    async def test_returns_updated_at_and_head_sha(self, db):
+        pr = make_pr(updated_at="2025-01-16T12:00:00Z", head_sha="abc123def456")
+        await upsert_pull_request(db, pr)
+        await db.commit()
+
+        result = await get_pr_updated_state(db, "testorg", "testrepo", 42)
+        assert result == ("2025-01-16T12:00:00Z", "abc123def456")
+
+    async def test_returns_none_head_sha_when_null(self, db):
+        pr = make_pr(head_sha=None)
+        await upsert_pull_request(db, pr)
+        await db.commit()
+
+        result = await get_pr_updated_state(db, "testorg", "testrepo", 42)
+        assert result == ("2025-01-16T12:00:00Z", None)
 
 
 class TestQueries:

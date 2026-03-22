@@ -68,9 +68,11 @@ def make_pr(
     merged_at: str | None = None,
     closed_at: str | None = None,
     url: str = "https://github.com/testorg/testrepo/pull/42",
+    commits: list | None = None,
+    commits_complete: bool | None = None,
 ) -> dict:
     """Create a sample PR dict matching GitHubClient._normalize_pr output."""
-    return {
+    result = {
         "id": id,
         "node_id": node_id,
         "repo_owner": repo_owner,
@@ -99,6 +101,10 @@ def make_pr(
         "closed_at": closed_at,
         "url": url,
     }
+    if commits is not None:
+        result["commits"] = commits
+        result["commits_complete"] = commits_complete if commits_complete is not None else True
+    return result
 
 
 def make_commits():
@@ -173,6 +179,7 @@ def mock_github_client():
     client.fetch_pr_commits = AsyncMock(return_value=make_commits())
     client.fetch_pr_files = AsyncMock(return_value=make_files())
     client.fetch_pr_check_runs = AsyncMock(return_value=make_checks())
+    client.fetch_single_pr = AsyncMock(return_value=make_pr())
     client.fetch_open_issues_for_authors = AsyncMock(return_value=[make_issue()])
     client.fetch_assigned_issues = AsyncMock(return_value=[])
     client.get_authenticated_user = AsyncMock(
