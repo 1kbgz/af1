@@ -43,10 +43,6 @@
   "devDependencies": {
     "@finos/perspective-esbuild-plugin": "^3.2.1",
     "@playwright/test": "^1.59.0",
-<<<<<<< before updating
-    "@prospective.co/procss": "^0.1.17",
-=======
->>>>>>> after updating
     "cpy": "^13.2.1",
     "esbuild": "^0.27.2",
     "lightningcss": "^1.29.3",
