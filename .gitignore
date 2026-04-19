@@ -151,8 +151,8 @@ multirun/
 ROADMAP.md
 AGENTS.md
 .github/hooks/sdlc.json
+.superpowers
 
 # Other
 run.sh
 SETUP.md
-
