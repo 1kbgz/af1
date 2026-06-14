@@ -23,13 +23,8 @@ export default defineConfig({
     },
   ],
   webServer: {
-<<<<<<< before updating
     command: "python -m af1.testing.test_server",
     url: "http://127.0.0.1:8510/api/health",
-=======
-    command: "pnpm run start:tests",
-    url: "http://127.0.0.1:3000",
->>>>>>> after updating
     reuseExistingServer: !process.env.CI,
     timeout: 30 * 1000,
   },
