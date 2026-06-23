@@ -217,6 +217,20 @@ class TestGraphQL:
         result = await client._graphql("query { viewer { login } }")
         assert result == {"viewer": {"login": "user1"}}
 
+    async def test_graphql_returns_partial_data_on_node_errors(self):
+        """SAML/FORBIDDEN errors on individual nodes are tolerated; data is returned."""
+        client = GitHubClient("token")
+        mock_resp = Mock()
+        mock_resp.raise_for_status = lambda: None
+        mock_resp.json.return_value = {
+            "data": {"search": {"nodes": [{"number": 1}, None]}},
+            "errors": [{"type": "FORBIDDEN", "extensions": {"saml_failure": True}}],
+        }
+        client._client.post = AsyncMock(return_value=mock_resp)
+
+        result = await client._graphql("query { search { nodes } }")
+        assert result == {"search": {"nodes": [{"number": 1}, None]}}
+
 
 class TestFetchOpenPrs:
     async def test_deduplicates_prs(self):
@@ -462,3 +476,136 @@ class TestRestGetRetry:
         with pytest.raises(httpx.HTTPStatusError):
             await client._rest_get("https://api.github.com/test")
         assert client._client.get.call_count == 1
+
+
+def _repo_node(owner, name, permission, **extra):
+    node = {
+        "nameWithOwner": f"{owner}/{name}",
+        "name": name,
+        "owner": {"login": owner},
+        "description": None,
+        "isPrivate": False,
+        "isArchived": False,
+        "defaultBranchRef": {"name": "main"},
+        "pushedAt": "2025-01-01T00:00:00Z",
+        "url": f"https://github.com/{owner}/{name}",
+        "viewerPermission": permission,
+    }
+    node.update(extra)
+    return node
+
+
+class TestNormalizeRepo:
+    def test_flattens_node(self):
+        client = GitHubClient("token")
+        repo = client._normalize_repo(_repo_node("o", "r", "MAINTAIN", isPrivate=True))
+        assert repo["name_with_owner"] == "o/r"
+        assert repo["owner"] == "o"
+        assert repo["default_branch"] == "main"
+        assert repo["viewer_permission"] == "MAINTAIN"
+        assert repo["is_private"] is True
+
+    def test_null_default_branch(self):
+        client = GitHubClient("token")
+        repo = client._normalize_repo(_repo_node("o", "r", "READ", defaultBranchRef=None))
+        assert repo["default_branch"] is None
+
+
+class TestFetchMaintainedRepos:
+    async def test_filters_orgs_users_by_permission(self):
+        client = GitHubClient("token")
+
+        async def fake_graphql(query, variables):
+            if "organization(" in query:
+                return {
+                    "organization": {
+                        "repositories": {
+                            "pageInfo": {"hasNextPage": False, "endCursor": None},
+                            "nodes": [_repo_node("acme", "keep", "WRITE"), _repo_node("acme", "drop", "READ")],
+                        }
+                    }
+                }
+            if "user(" in query:
+                return {
+                    "user": {
+                        "repositories": {
+                            "pageInfo": {"hasNextPage": False, "endCursor": None},
+                            "nodes": [_repo_node("alice", "mine", "ADMIN"), _repo_node("alice", "ro", "TRIAGE")],
+                        }
+                    }
+                }
+            raise AssertionError("unexpected query")
+
+        client._graphql = AsyncMock(side_effect=fake_graphql)
+        repos = await client.fetch_maintained_repos(["alice"], ["acme"], [])
+        names = {r["name_with_owner"] for r in repos}
+        assert names == {"acme/keep", "alice/mine"}
+
+    async def test_explicit_repos_included_regardless_of_permission(self):
+        client = GitHubClient("token")
+        client._graphql = AsyncMock(return_value={"repository": _repo_node("o", "explicit", "READ")})
+        repos = await client.fetch_maintained_repos([], [], ["o/explicit"])
+        assert [r["name_with_owner"] for r in repos] == ["o/explicit"]
+
+    async def test_inaccessible_org_skipped(self):
+        client = GitHubClient("token")
+        # SAML-protected org: _graphql returns partial data with organization=None
+        client._graphql = AsyncMock(return_value={"organization": None})
+        repos = await client.fetch_maintained_repos([], ["locked"], [])
+        assert repos == []
+
+    async def test_one_source_failure_does_not_abort_others(self):
+        client = GitHubClient("token")
+
+        async def fake_graphql(query, variables):
+            if "organization(" in query:
+                raise RuntimeError("boom")
+            return {"repository": _repo_node("o", "explicit", "ADMIN")}
+
+        client._graphql = AsyncMock(side_effect=fake_graphql)
+        repos = await client.fetch_maintained_repos([], ["bad"], ["o/explicit"])
+        assert [r["name_with_owner"] for r in repos] == ["o/explicit"]
+
+    async def test_malformed_explicit_repo_skipped(self):
+        client = GitHubClient("token")
+        client._graphql = AsyncMock(return_value={"repository": None})
+        repos = await client.fetch_maintained_repos([], [], ["not-a-full-name"])
+        assert repos == []
+        client._graphql.assert_not_called()
+
+
+class TestFetchOpenPrsForRepo:
+    async def test_searches_repo_scoped(self):
+        client = GitHubClient("token")
+        captured = {}
+
+        async def fake_graphql(query, variables):
+            captured["query"] = variables["query"]
+            return {
+                "search": {
+                    "pageInfo": {"hasNextPage": False, "endCursor": None},
+                    "nodes": [
+                        {
+                            "databaseId": 1,
+                            "id": "n1",
+                            "number": 7,
+                            "title": "PR",
+                            "state": "OPEN",
+                            "createdAt": "2025-01-01T00:00:00Z",
+                            "updatedAt": "2025-01-01T00:00:00Z",
+                            "url": "https://github.com/o/r/pull/7",
+                            "author": {"login": "bob", "avatarUrl": None},
+                            "repository": {"owner": {"login": "o"}, "name": "r"},
+                            "labels": {"nodes": []},
+                            "lastCommit": {"nodes": []},
+                            "allCommits": {"pageInfo": {"hasNextPage": False}, "nodes": []},
+                        }
+                    ],
+                }
+            }
+
+        client._graphql = AsyncMock(side_effect=fake_graphql)
+        prs = await client.fetch_open_prs_for_repo("o", "r")
+        assert captured["query"] == "is:pr is:open repo:o/r"
+        assert prs[0]["number"] == 7
+        assert prs[0]["repo_owner"] == "o"

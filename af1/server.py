@@ -22,7 +22,8 @@ from . import __version__
 from .config import Config
 from .db import get_db, get_issue, get_open_issues, get_open_prs, get_pr, get_pr_checks, get_pr_commits, get_pr_files, update_pr_state
 from .github_client import GitHubClient
-from .sync import sync_all_issues, sync_all_prs, sync_loop, sync_repo_prs, sync_single_pr
+from .mcp_server import mcp as mcp_server, set_context as set_mcp_context
+from .sync import run_full_sync, sync_loop, sync_repo_prs, sync_single_pr
 
 logger = logging.getLogger(__name__)
 
@@ -83,8 +84,7 @@ async def api_sync(request: Request) -> JSONResponse:
     client: GitHubClient = request.app.state.github_client
     config: Config = request.app.state.config
     try:
-        await sync_all_prs(db, client, config)
-        await sync_all_issues(db, client, config)
+        await run_full_sync(db, client, config)
         return JSONResponse({"status": "ok"})
     except Exception as e:
         logger.exception("Manual sync failed")
@@ -216,11 +216,17 @@ async def lifespan(app: Starlette):
     app.state.github_client = GitHubClient(config.github_token, config.github_host)
     app.state.stop_event = asyncio.Event()
 
+    # Share live resources with the mounted MCP server so its tools read/write the same
+    # cache, client, and sync as the web API.
+    set_mcp_context(db=app.state.db, client=app.state.github_client, config=config)
+
     # Start background sync
     sync_task = asyncio.create_task(sync_loop(app.state.db, app.state.github_client, config, app.state.stop_event))
     logger.info("af1 server started on %s:%d", config.host, config.port)
 
-    yield
+    # Run the MCP streamable-HTTP session manager for the lifetime of the app.
+    async with mcp_server.session_manager.run():
+        yield
 
     # Shutdown
     app.state.stop_event.set()
@@ -249,6 +255,8 @@ def create_routes() -> list:
         Route("/api/sync", api_sync, methods=["POST"]),
         Route("/api/prs/{owner}/{repo}/{number:int}/sync", api_sync_pr, methods=["POST"]),
         Route("/api/repos/{owner}/{repo}/sync", api_sync_repo, methods=["POST"]),
+        # MCP server (streamable HTTP) for agent access — endpoint at /mcp
+        Mount("/mcp", app=mcp_server.streamable_http_app()),
     ]
 
     # Serve frontend static files if the extension directory exists

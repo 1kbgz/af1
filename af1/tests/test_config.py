@@ -22,6 +22,12 @@ class TestConfigDefaults:
         c = Config()
         assert c.db_path == Path(os.environ.get("AF1_DB_PATH", Path.home() / ".af1" / "af1.db"))
 
+    def test_maintained_repo_defaults_empty(self):
+        c = Config()
+        assert c.watched_users == []
+        assert c.watched_orgs == []
+        assert c.watched_repos == []
+
 
 class TestConfigLoad:
     def test_load_from_env(self, monkeypatch):
@@ -88,3 +94,17 @@ class TestConfigLoad:
         monkeypatch.setenv("AF1_DB_PATH", custom_path)
         c = Config.load()
         assert c.db_path == Path(custom_path)
+
+    def test_maintained_repos_from_env(self, monkeypatch):
+        monkeypatch.setenv("AF1_WATCHED_USERS", " alice , bob ")
+        monkeypatch.setenv("AF1_WATCHED_ORGS", "acme,globex")
+        monkeypatch.setenv("AF1_WATCHED_REPOS", "acme/widget, acme/gadget")
+        c = Config.load()
+        assert c.watched_users == ["alice", "bob"]
+        assert c.watched_orgs == ["acme", "globex"]
+        assert c.watched_repos == ["acme/widget", "acme/gadget"]
+
+    def test_maintained_repos_cli_override(self, monkeypatch):
+        monkeypatch.setenv("AF1_WATCHED_ORGS", "envorg")
+        c = Config.load(watched_orgs="cliorg1,cliorg2")
+        assert c.watched_orgs == ["cliorg1", "cliorg2"]

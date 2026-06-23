@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 from unittest.mock import AsyncMock
 
 import pytest
 
-from af1.db import get_open_issues, get_open_prs, get_pr_checks, get_pr_commits, get_pr_files
-from af1.sync import sync_all_issues, sync_all_prs, sync_loop
-from af1.tests.conftest import make_commits, make_issue, make_pr, mock_github_client
+from af1.db import get_open_issues, get_open_prs, get_pr_checks, get_pr_commits, get_pr_files, get_repos
+from af1.sync import sync_all_issues, sync_all_prs, sync_loop, sync_maintained
+from af1.tests.conftest import make_commits, make_issue, make_pr, make_repo, mock_github_client
 
 pytestmark = pytest.mark.asyncio(loop_scope="function")
 
@@ -305,3 +306,67 @@ class TestSyncAllIssues:
 
         issues = await get_open_issues(db)
         assert len(issues) == 1
+
+
+class TestSyncMaintained:
+    async def test_skipped_when_unconfigured(self, db, sample_config):
+        client = mock_github_client()
+        keys = await sync_maintained(db, client, sample_config)
+        assert keys == set()
+        client.fetch_maintained_repos.assert_not_called()
+
+    async def test_upserts_repos_and_repo_prs(self, db, sample_config):
+        cfg = replace(sample_config, watched_orgs=["acme"])
+        repo = make_repo(owner="acme", name="widget")
+        repo_pr = make_pr(id=5001, node_id="PR_repo", repo_owner="acme", repo_name="widget", number=99, author="contributor")
+        client = mock_github_client()
+        client.fetch_maintained_repos.return_value = [repo]
+        client.fetch_open_prs_for_repo.return_value = [repo_pr]
+
+        keys = await sync_maintained(db, client, cfg)
+
+        assert keys == {("acme", "widget", 99)}
+        repos = await get_repos(db)
+        assert [r["name_with_owner"] for r in repos] == ["acme/widget"]
+        prs = await get_open_prs(db)
+        assert any(p["number"] == 99 and p["author"] == "contributor" for p in prs)
+
+    async def test_archived_repos_skip_pr_fetch(self, db, sample_config):
+        cfg = replace(sample_config, watched_orgs=["acme"])
+        client = mock_github_client()
+        client.fetch_maintained_repos.return_value = [make_repo(owner="acme", name="old", is_archived=True)]
+
+        keys = await sync_maintained(db, client, cfg)
+
+        assert keys == set()
+        client.fetch_open_prs_for_repo.assert_not_called()
+        # repo is still recorded
+        assert [r["name_with_owner"] for r in await get_repos(db)] == ["acme/old"]
+
+    async def test_extra_open_keys_protect_maintained_prs_from_stale(self, db, sample_config):
+        # A maintained-repo PR authored by someone outside watched_authors must not be
+        # marked CLOSED by the authored-PR sweep.
+        from af1.db import upsert_pull_request
+
+        repo_pr = make_pr(id=5002, repo_owner="acme", repo_name="widget", number=7, author="contributor")
+        await upsert_pull_request(db, repo_pr)
+        await db.commit()
+
+        client = mock_github_client()  # authored sweep returns the default testuser PR, not the repo PR
+        await sync_all_prs(db, client, sample_config, extra_open_keys={("acme", "widget", 7)})
+
+        prs = {(_p["repo_owner"], _p["repo_name"], _p["number"]): _p for _p in await get_open_prs(db)}
+        assert ("acme", "widget", 7) in prs  # still OPEN, protected
+
+    async def test_maintained_pr_without_protection_is_closed(self, db, sample_config):
+        from af1.db import upsert_pull_request
+
+        repo_pr = make_pr(id=5003, repo_owner="acme", repo_name="widget", number=8, author="contributor")
+        await upsert_pull_request(db, repo_pr)
+        await db.commit()
+
+        client = mock_github_client()
+        await sync_all_prs(db, client, sample_config)  # no extra_open_keys
+
+        open_keys = {(p["repo_owner"], p["repo_name"], p["number"]) for p in await get_open_prs(db)}
+        assert ("acme", "widget", 8) not in open_keys  # swept to CLOSED

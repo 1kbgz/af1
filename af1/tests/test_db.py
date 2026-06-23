@@ -12,12 +12,14 @@ from af1.db import (
     get_pr_commits,
     get_pr_files,
     get_pr_updated_state,
+    get_repos,
     upsert_pr_check_runs,
     upsert_pr_commits,
     upsert_pr_files,
     upsert_pull_request,
+    upsert_repo,
 )
-from af1.tests.conftest import make_checks, make_commits, make_files, make_pr
+from af1.tests.conftest import make_checks, make_commits, make_files, make_pr, make_repo
 
 pytestmark = pytest.mark.asyncio(loop_scope="function")
 
@@ -39,7 +41,35 @@ class TestGetDb:
         assert "pr_files" in tables
         assert "pr_check_runs" in tables
         assert "sync_state" in tables
+        assert "repos" in tables
 
+
+class TestRepos:
+    async def test_upsert_and_get(self, db):
+        await upsert_repo(db, make_repo(owner="o1", name="r1", viewer_permission="ADMIN"))
+        await upsert_repo(db, make_repo(owner="o2", name="r2", viewer_permission="WRITE"))
+        await db.commit()
+        repos = await get_repos(db)
+        assert {r["name_with_owner"] for r in repos} == {"o1/r1", "o2/r2"}
+
+    async def test_upsert_is_idempotent_and_updates(self, db):
+        await upsert_repo(db, make_repo(owner="o", name="r", description="old", viewer_permission="WRITE"))
+        await upsert_repo(db, make_repo(owner="o", name="r", description="new", viewer_permission="ADMIN"))
+        await db.commit()
+        repos = await get_repos(db)
+        assert len(repos) == 1
+        assert repos[0]["description"] == "new"
+        assert repos[0]["viewer_permission"] == "ADMIN"
+
+    async def test_bool_fields_roundtrip(self, db):
+        await upsert_repo(db, make_repo(is_private=True, is_archived=True))
+        await db.commit()
+        repos = await get_repos(db)
+        assert repos[0]["is_private"] == 1
+        assert repos[0]["is_archived"] == 1
+
+
+class TestDbPragmas:
     async def test_wal_mode_enabled(self, db):
         cursor = await db.execute("PRAGMA journal_mode")
         row = await cursor.fetchone()
