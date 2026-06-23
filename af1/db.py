@@ -103,6 +103,20 @@ CREATE TABLE IF NOT EXISTS issues (
     UNIQUE(repo_owner, repo_name, number)
 );
 
+CREATE TABLE IF NOT EXISTS repos (
+    name_with_owner TEXT PRIMARY KEY,
+    owner TEXT NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT,
+    is_private INTEGER NOT NULL DEFAULT 0,
+    is_archived INTEGER NOT NULL DEFAULT 0,
+    default_branch TEXT,
+    viewer_permission TEXT,
+    pushed_at TEXT,
+    url TEXT,
+    synced_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_pr_repo ON pull_requests(repo_owner, repo_name);
 CREATE INDEX IF NOT EXISTS idx_pr_author ON pull_requests(author);
 CREATE INDEX IF NOT EXISTS idx_pr_state ON pull_requests(state);
@@ -114,6 +128,7 @@ CREATE INDEX IF NOT EXISTS idx_issue_repo ON issues(repo_owner, repo_name);
 CREATE INDEX IF NOT EXISTS idx_issue_author ON issues(author);
 CREATE INDEX IF NOT EXISTS idx_issue_state ON issues(state);
 CREATE INDEX IF NOT EXISTS idx_issue_updated ON issues(updated_at);
+CREATE INDEX IF NOT EXISTS idx_repos_owner ON repos(owner);
 """
 
 
@@ -319,6 +334,37 @@ async def get_issue(db: aiosqlite.Connection, owner: str, repo: str, number: int
     )
     row = await cursor.fetchone()
     return _row_to_dict(row) if row else None
+
+
+async def upsert_repo(db: aiosqlite.Connection, repo: dict) -> None:
+    await db.execute(
+        """INSERT INTO repos
+           (name_with_owner, owner, name, description, is_private, is_archived,
+            default_branch, viewer_permission, pushed_at, url, synced_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+           ON CONFLICT(name_with_owner) DO UPDATE SET
+             owner=excluded.owner, name=excluded.name, description=excluded.description,
+             is_private=excluded.is_private, is_archived=excluded.is_archived,
+             default_branch=excluded.default_branch, viewer_permission=excluded.viewer_permission,
+             pushed_at=excluded.pushed_at, url=excluded.url, synced_at=datetime('now')""",
+        (
+            repo["name_with_owner"],
+            repo["owner"],
+            repo["name"],
+            repo.get("description"),
+            int(repo.get("is_private", False)),
+            int(repo.get("is_archived", False)),
+            repo.get("default_branch"),
+            repo.get("viewer_permission"),
+            repo.get("pushed_at"),
+            repo.get("url"),
+        ),
+    )
+
+
+async def get_repos(db: aiosqlite.Connection) -> list[dict]:
+    cursor = await db.execute("SELECT * FROM repos ORDER BY pushed_at DESC")
+    return [_row_to_dict(r) for r in await cursor.fetchall()]
 
 
 async def get_pr_updated_state(db: aiosqlite.Connection, owner: str, repo: str, number: int) -> tuple[str, str | None] | None:

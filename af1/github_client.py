@@ -172,6 +172,67 @@ query($owner: String!, $repo: String!, $number: Int!) {
 """
 
 
+# Repo fields shared across the maintained-repo queries below.
+_REPO_FIELDS = """
+    nameWithOwner
+    name
+    owner { login }
+    description
+    isPrivate
+    isArchived
+    defaultBranchRef { name }
+    pushedAt
+    url
+    viewerPermission
+"""
+
+ORG_REPOS_QUERY = (
+    """
+query($login: String!, $cursor: String) {
+  organization(login: $login) {
+    repositories(first: 100, after: $cursor, orderBy: {field: PUSHED_AT, direction: DESC}) {
+      pageInfo { hasNextPage endCursor }
+      nodes {"""
+    + _REPO_FIELDS
+    + """
+      }
+    }
+  }
+}
+"""
+)
+
+USER_REPOS_QUERY = (
+    """
+query($login: String!, $cursor: String) {
+  user(login: $login) {
+    repositories(first: 100, after: $cursor, ownerAffiliations: [OWNER], orderBy: {field: PUSHED_AT, direction: DESC}) {
+      pageInfo { hasNextPage endCursor }
+      nodes {"""
+    + _REPO_FIELDS
+    + """
+      }
+    }
+  }
+}
+"""
+)
+
+SINGLE_REPO_QUERY = (
+    """
+query($owner: String!, $name: String!) {
+  repository(owner: $owner, name: $name) {"""
+    + _REPO_FIELDS
+    + """
+  }
+}
+"""
+)
+
+# Permission levels that indicate the token holder is effectively a maintainer.
+MAINTAINER_PERMISSIONS = {"ADMIN", "MAINTAIN", "WRITE"}
+
+
 class GitHubClient:
     def __init__(self, token: str, github_host: str = "github.com"):
         self._token = token
@@ -227,9 +288,15 @@ class GitHubClient:
         )
         resp.raise_for_status()
         data = resp.json()
-        if "errors" in data:
-            logger.error("GraphQL errors: %s", data["errors"])
-            raise RuntimeError(f"GraphQL errors: {data['errors']}")
+        if data.get("errors"):
+            # GitHub returns partial data alongside per-node errors (e.g. SAML
+            # enforcement blocks nodes in orgs the token isn't authorized for).
+            # Those nodes come back as null and are skipped by callers, so only
+            # treat the response as fatal when no usable data was returned.
+            if data.get("data") is None:
+                logger.error("GraphQL errors: %s", data["errors"])
+                raise RuntimeError(f"GraphQL errors: {data['errors']}")
+            logger.warning("GraphQL partial errors (continuing): %s", data["errors"])
         return data["data"]
 
     async def fetch_open_prs_for_authors(self, authors: list[str]) -> list[dict]:
@@ -274,6 +341,26 @@ class GitHubClient:
                 break
             cursor = search["pageInfo"]["endCursor"]
         return all_prs
+
+    async def _search_prs(self, query_str: str) -> list[dict]:
+        """Run a paginated PR search and return normalized PR dicts."""
+        all_prs = []
+        cursor = None
+        while True:
+            data = await self._graphql(SEARCH_PRS_QUERY, {"query": query_str, "cursor": cursor})
+            search = data["search"]
+            for node in search["nodes"]:
+                if node is None:
+                    continue
+                all_prs.append(self._normalize_pr(node))
+            if not search["pageInfo"]["hasNextPage"]:
+                break
+            cursor = search["pageInfo"]["endCursor"]
+        return all_prs
+
+    async def fetch_open_prs_for_repo(self, owner: str, repo: str) -> list[dict]:
+        """Fetch all open PRs on a repo, authored by anyone."""
+        return await self._search_prs(f"is:pr is:open repo:{owner}/{repo}")
 
     async def fetch_open_issues_for_authors(self, authors: list[str]) -> list[dict]:
         all_issues = []
@@ -419,6 +506,91 @@ class GitHubClient:
             "closed_at": node.get("closedAt"),
             "url": node["url"],
         }
+
+    def _normalize_repo(self, node: dict) -> dict:
+        """Convert a GraphQL Repository node to a flat dict for the database."""
+        owner = (node.get("owner") or {}).get("login", "")
+        default_branch = (node.get("defaultBranchRef") or {}).get("name")
+        return {
+            "name_with_owner": node.get("nameWithOwner") or f"{owner}/{node.get('name', '')}",
+            "owner": owner,
+            "name": node.get("name", ""),
+            "description": node.get("description"),
+            "is_private": bool(node.get("isPrivate", False)),
+            "is_archived": bool(node.get("isArchived", False)),
+            "default_branch": default_branch,
+            "viewer_permission": node.get("viewerPermission"),
+            "pushed_at": node.get("pushedAt"),
+            "url": node.get("url"),
+        }
+
+    async def _fetch_repos_paginated(self, query: str, login: str, container_key: str) -> list[dict]:
+        """Paginate an org/user repositories query and return normalized repo dicts.
+
+        container_key is 'organization' or 'user'. Returns [] if the container is
+        inaccessible (e.g. SAML-protected org returns null with partial errors).
+        """
+        repos = []
+        cursor = None
+        while True:
+            data = await self._graphql(query, {"login": login, "cursor": cursor})
+            container = (data or {}).get(container_key)
+            if not container:
+                break
+            conn = container["repositories"]
+            for node in conn["nodes"]:
+                if node:
+                    repos.append(self._normalize_repo(node))
+            if not conn["pageInfo"]["hasNextPage"]:
+                break
+            cursor = conn["pageInfo"]["endCursor"]
+        return repos
+
+    async def fetch_maintained_repos(self, users: list[str], orgs: list[str], repos: list[str]) -> list[dict]:
+        """Resolve the set of repos the token effectively maintains.
+
+        For users and orgs, only repos with a viewer permission in MAINTAINER_PERMISSIONS
+        (WRITE/MAINTAIN/ADMIN) are kept. Explicit ``owner/repo`` entries are always included
+        regardless of permission. Results are de-duplicated by name_with_owner. Per-source
+        failures are logged and skipped so one bad org/user/repo doesn't abort the rest.
+        """
+        by_name: dict[str, dict] = {}
+
+        def _add(repo: dict, *, enforce_permission: bool) -> None:
+            if enforce_permission and repo.get("viewer_permission") not in MAINTAINER_PERMISSIONS:
+                return
+            by_name[repo["name_with_owner"]] = repo
+
+        for org in orgs:
+            try:
+                for repo in await self._fetch_repos_paginated(ORG_REPOS_QUERY, org, "organization"):
+                    _add(repo, enforce_permission=True)
+            except Exception:
+                logger.exception("Failed to fetch repos for org %s", org)
+
+        for user in users:
+            try:
+                for repo in await self._fetch_repos_paginated(USER_REPOS_QUERY, user, "user"):
+                    _add(repo, enforce_permission=True)
+            except Exception:
+                logger.exception("Failed to fetch repos for user %s", user)
+
+        for full_name in repos:
+            if "/" not in full_name:
+                logger.warning("Skipping malformed watched repo %r (expected 'owner/repo')", full_name)
+                continue
+            owner, name = full_name.split("/", 1)
+            try:
+                data = await self._graphql(SINGLE_REPO_QUERY, {"owner": owner, "name": name})
+                node = (data or {}).get("repository")
+                if node:
+                    _add(self._normalize_repo(node), enforce_permission=False)
+                else:
+                    logger.warning("Watched repo %s not found or inaccessible", full_name)
+            except Exception:
+                logger.exception("Failed to fetch watched repo %s", full_name)
+
+        return list(by_name.values())
 
     async def fetch_pr_commits(self, owner: str, repo: str, number: int) -> list[dict]:
         """Fetch commits for a PR via GraphQL."""

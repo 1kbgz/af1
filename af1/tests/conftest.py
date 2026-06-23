@@ -188,8 +188,37 @@ def mock_github_client():
     client.merge_pull_request = AsyncMock(return_value={"success": True})
     client.close_pull_request = AsyncMock(return_value={"success": True})
     client.approve_pull_request = AsyncMock(return_value={"success": True})
+    client.fetch_maintained_repos = AsyncMock(return_value=[])
+    client.fetch_open_prs_for_repo = AsyncMock(return_value=[])
     client.close = AsyncMock()
     return client
+
+
+def make_repo(
+    *,
+    owner: str = "testorg",
+    name: str = "testrepo",
+    description: str | None = "A test repo",
+    is_private: bool = False,
+    is_archived: bool = False,
+    default_branch: str = "main",
+    viewer_permission: str = "ADMIN",
+    pushed_at: str = "2025-01-16T12:00:00Z",
+    url: str | None = None,
+) -> dict:
+    """Create a sample repo dict matching GitHubClient._normalize_repo output."""
+    return {
+        "name_with_owner": f"{owner}/{name}",
+        "owner": owner,
+        "name": name,
+        "description": description,
+        "is_private": is_private,
+        "is_archived": is_archived,
+        "default_branch": default_branch,
+        "viewer_permission": viewer_permission,
+        "pushed_at": pushed_at,
+        "url": url or f"https://github.com/{owner}/{name}",
+    }
 
 
 def make_issue(

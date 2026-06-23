@@ -17,14 +17,24 @@ from .db import (
     upsert_pr_commits,
     upsert_pr_files,
     upsert_pull_request,
+    upsert_repo,
 )
 from .github_client import GitHubClient
 
 logger = logging.getLogger(__name__)
 
 
-async def sync_all_prs(db: aiosqlite.Connection, client: GitHubClient, config: Config):
-    """Full sync: fetch open PRs for all watched authors, plus review-requested PRs."""
+async def sync_all_prs(
+    db: aiosqlite.Connection,
+    client: GitHubClient,
+    config: Config,
+    extra_open_keys: set[tuple[str, str, int]] | None = None,
+):
+    """Full sync: fetch open PRs for all watched authors, plus review-requested PRs.
+
+    ``extra_open_keys`` lists PRs that another sync pass (e.g. maintained-repo sync) has
+    already confirmed open this cycle; they are protected from being marked stale here.
+    """
     logger.info("Starting PR sync for authors: %s", config.watched_authors)
 
     # Fetch PRs authored by watched users
@@ -97,6 +107,8 @@ async def sync_all_prs(db: aiosqlite.Connection, client: GitHubClient, config: C
 
     # Mark PRs that are OPEN in the DB but no longer returned by GitHub
     still_open = {(p["repo_owner"], p["repo_name"], p["number"]) for p in prs}
+    if extra_open_keys:
+        still_open |= extra_open_keys
     await mark_stale_prs_closed(db, still_open)
 
     logger.info("PR sync complete: %d PRs processed", len(prs))
@@ -225,12 +237,73 @@ async def sync_all_issues(db: aiosqlite.Connection, client: GitHubClient, config
     logger.info("Issue sync complete: %d issues processed", len(issues))
 
 
+def _maintained_sync_configured(config: Config) -> bool:
+    return bool(config.watched_users or config.watched_orgs or config.watched_repos)
+
+
+async def sync_maintained(db: aiosqlite.Connection, client: GitHubClient, config: Config) -> set[tuple[str, str, int]]:
+    """Sync maintained repos and their open PRs (authored by anyone).
+
+    Upserts the repo list, then upserts open PRs for each non-archived maintained repo.
+    Returns the set of (owner, repo, number) keys confirmed open this pass so the caller
+    can protect them from stale-marking. Lightweight: stores PR rows plus inline commits,
+    but skips per-PR files/checks fetches (use sync_single_pr for full detail).
+    """
+    if not _maintained_sync_configured(config):
+        return set()
+
+    logger.info(
+        "Starting maintained-repo sync (users=%s orgs=%s repos=%s)",
+        config.watched_users,
+        config.watched_orgs,
+        config.watched_repos,
+    )
+    repos = await client.fetch_maintained_repos(config.watched_users, config.watched_orgs, config.watched_repos)
+    logger.info("Resolved %d maintained repos", len(repos))
+    for repo in repos:
+        try:
+            await upsert_repo(db, repo)
+        except Exception:
+            logger.exception("Failed to upsert repo %s", repo.get("name_with_owner"))
+    await db.commit()
+
+    open_keys: set[tuple[str, str, int]] = set()
+    for repo in repos:
+        if repo.get("is_archived"):
+            continue
+        owner, name = repo["owner"], repo["name"]
+        try:
+            prs = await client.fetch_open_prs_for_repo(owner, name)
+        except Exception:
+            logger.exception("Failed to fetch PRs for repo %s/%s", owner, name)
+            continue
+        for pr in prs:
+            try:
+                pr_id = await upsert_pull_request(db, pr)
+                inline_commits = pr.get("commits")
+                if inline_commits is not None and pr.get("commits_complete", False):
+                    await upsert_pr_commits(db, pr_id, inline_commits)
+                await db.commit()
+                open_keys.add((pr["repo_owner"], pr["repo_name"], pr["number"]))
+            except Exception:
+                logger.exception("Failed to upsert PR %s/%s#%d", pr["repo_owner"], pr["repo_name"], pr["number"])
+
+    logger.info("Maintained-repo sync complete: %d repos, %d open PRs", len(repos), len(open_keys))
+    return open_keys
+
+
+async def run_full_sync(db: aiosqlite.Connection, client: GitHubClient, config: Config):
+    """Run one full sync pass: maintained repos, authored/review PRs, then issues."""
+    maintained_open = await sync_maintained(db, client, config)
+    await sync_all_prs(db, client, config, extra_open_keys=maintained_open)
+    await sync_all_issues(db, client, config)
+
+
 async def sync_loop(db: aiosqlite.Connection, client: GitHubClient, config: Config, stop_event: asyncio.Event):
-    """Run sync_all_prs on a recurring schedule."""
+    """Run the full sync (maintained repos, authored/review PRs, issues) on a recurring schedule."""
     while not stop_event.is_set():
         try:
-            await sync_all_prs(db, client, config)
-            await sync_all_issues(db, client, config)
+            await run_full_sync(db, client, config)
         except Exception:
             logger.exception("Sync loop error")
         try:
