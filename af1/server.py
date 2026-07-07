@@ -20,7 +20,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from . import __version__
 from .config import Config
-from .db import get_db, get_issue, get_open_issues, get_open_prs, get_pr, get_pr_checks, get_pr_commits, get_pr_files, update_pr_state
+from .db import get_db, get_issue, get_open_issues, get_open_prs, get_pr, get_pr_checks, get_pr_commits, get_pr_files, get_repos, update_pr_state
 from .github_client import GitHubClient
 from .mcp_server import mcp as mcp_server, set_context as set_mcp_context
 from .sync import run_full_sync, sync_loop, sync_repo_prs, sync_single_pr
@@ -181,6 +181,13 @@ async def api_batch_approve(request: Request) -> JSONResponse:
     return JSONResponse(results)
 
 
+async def api_repos(request: Request) -> JSONResponse:
+    """Return maintained repos (cached) with inline open PR/issue and failing-CI counts."""
+    db = request.app.state.db
+    repos = await get_repos(db)
+    return JSONResponse(repos)
+
+
 async def api_issues(request: Request) -> JSONResponse:
     db = request.app.state.db
     authors_param = request.query_params.get("authors")
@@ -250,6 +257,7 @@ def create_routes() -> list:
         Route("/api/prs/close", api_batch_close, methods=["POST"]),
         Route("/api/prs/approve", api_batch_approve, methods=["POST"]),
         Route("/api/prs/{owner}/{repo}/{number:int}", api_pr_detail),
+        Route("/api/repos", api_repos),
         Route("/api/issues", api_issues),
         Route("/api/issues/{owner}/{repo}/{number:int}", api_issue_detail),
         Route("/api/sync", api_sync, methods=["POST"]),

@@ -210,3 +210,23 @@ export async function getIssueDetail(
     `/api/issues/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${number}`,
   );
 }
+
+export interface Repo {
+  name_with_owner: string;
+  owner: string;
+  name: string;
+  description: string | null;
+  is_private: number;
+  is_archived: number;
+  default_branch: string | null;
+  viewer_permission: string | null;
+  open_pr_count: number;
+  open_issue_count: number;
+  failing_ci_count: number;
+  pushed_at: string | null;
+  url: string | null;
+}
+
+export async function getRepos(): Promise<Repo[]> {
+  return fetchJSON<Repo[]>("/api/repos");
+}

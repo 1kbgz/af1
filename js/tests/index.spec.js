@@ -664,3 +664,81 @@ test.describe("Issue Detail Navigation", () => {
     await waitForIssueList(page);
   });
 });
+
+async function waitForRepoList(page) {
+  await expect(page.locator(".repo-row").first()).toBeVisible({
+    timeout: 10000,
+  });
+}
+
+test.describe("Repos API", () => {
+  test("repos endpoint returns seeded repos", async ({ request }) => {
+    const resp = await request.get("/api/repos");
+    expect(resp.ok()).toBeTruthy();
+    const data = await resp.json();
+    expect(data.length).toBe(4);
+  });
+
+  test("repos include counts and derived failing CI", async ({ request }) => {
+    const resp = await request.get("/api/repos");
+    const data = await resp.json();
+    const frontend = data.find((r) => r.name_with_owner === "acme/frontend");
+    expect(frontend.open_pr_count).toBe(2);
+    expect(frontend.open_issue_count).toBe(2);
+    // PR #143 on acme/frontend has ci_status FAILURE → derived count of 1
+    expect(frontend.failing_ci_count).toBe(1);
+  });
+});
+
+test.describe("Repos Tab Navigation", () => {
+  test("nav shows Repos link", async ({ page }) => {
+    await page.goto("/");
+    const navLink = page.locator('.nav-link[data-view="repo-list"]');
+    await expect(navLink).toContainText("Repos");
+  });
+
+  test("clicking Repos nav shows repo list", async ({ page }) => {
+    await page.goto("/");
+    await page.locator('.nav-link[data-view="repo-list"]').click();
+    await waitForRepoList(page);
+    expect(await page.locator(".repo-row").count()).toBe(4);
+  });
+
+  test("Repos nav link becomes active", async ({ page }) => {
+    await page.goto("/#/repos");
+    await waitForRepoList(page);
+    const navLink = page.locator('.nav-link[data-view="repo-list"]');
+    await expect(navLink).toHaveClass(/active/);
+  });
+});
+
+test.describe("Repo List Content", () => {
+  test("repo list shows stat cards", async ({ page }) => {
+    await page.goto("/#/repos");
+    await waitForRepoList(page);
+    expect(await page.locator(".stat-card").count()).toBeGreaterThanOrEqual(4);
+  });
+
+  test("filter input filters repos", async ({ page }) => {
+    await page.goto("/#/repos");
+    await waitForRepoList(page);
+    await page.fill("#filter-input", "widgets");
+    expect(await page.locator(".repo-row").count()).toBe(1);
+  });
+
+  test("org multi-select filter works", async ({ page }) => {
+    await page.goto("/#/repos");
+    await waitForRepoList(page);
+    await page.click("#org-select-btn");
+    await page.locator('#org-dropdown input[value="globex"]').check();
+    expect(await page.locator(".repo-row").count()).toBe(1);
+  });
+
+  test("failing CI count is highlighted", async ({ page }) => {
+    await page.goto("/#/repos");
+    await waitForRepoList(page);
+    await expect(
+      page.locator(".repo-count.count-failing").first(),
+    ).toBeVisible();
+  });
+});

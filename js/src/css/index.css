@@ -1037,6 +1037,88 @@ body {
   opacity: 0.5;
 }
 
+.repo-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 8px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.repo-table thead th {
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-tertiary);
+  white-space: nowrap;
+}
+
+.repo-table tbody tr {
+  border-bottom: 1px solid var(--border-color);
+  transition: background 0.1s;
+}
+
+.repo-table tbody tr:last-child {
+  border-bottom: none;
+}
+
+.repo-table tbody tr:hover {
+  background: var(--bg-tertiary);
+}
+
+.repo-table td {
+  padding: 8px 10px;
+  font-size: 13px;
+  vertical-align: top;
+}
+
+.repo-row-link {
+  color: var(--text-primary);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.repo-row-link:hover {
+  color: var(--text-link);
+}
+
+.repo-row-desc {
+  display: block;
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.td-count,
+.th-count {
+  width: 90px;
+  text-align: center;
+}
+
+.td-count {
+  text-align: center;
+}
+
+.repo-count {
+  font-variant-numeric: tabular-nums;
+}
+
+.repo-count.count-failing {
+  color: var(--red);
+  font-weight: 600;
+}
+
+.stat-failing .stat-value {
+  color: var(--red);
+}
+
 .issue-body {
   white-space: pre-wrap;
   font-size: 13px;

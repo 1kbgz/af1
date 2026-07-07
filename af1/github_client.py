@@ -184,6 +184,8 @@ _REPO_FIELDS = """
     pushedAt
     url
     viewerPermission
+    openPRs: pullRequests(states: OPEN) { totalCount }
+    openIssues: issues(states: OPEN) { totalCount }
 """
 
 ORG_REPOS_QUERY = (
@@ -522,6 +524,8 @@ class GitHubClient:
             "viewer_permission": node.get("viewerPermission"),
             "pushed_at": node.get("pushedAt"),
             "url": node.get("url"),
+            "open_pr_count": (node.get("openPRs") or {}).get("totalCount", 0),
+            "open_issue_count": (node.get("openIssues") or {}).get("totalCount", 0),
         }
 
     async def _fetch_repos_paginated(self, query: str, login: str, container_key: str) -> list[dict]:

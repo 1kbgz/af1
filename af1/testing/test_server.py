@@ -14,6 +14,7 @@ from af1.db import (
     upsert_pr_commits,
     upsert_pr_files,
     upsert_pull_request,
+    upsert_repo,
 )
 
 SAMPLE_PRS = [
@@ -402,6 +403,66 @@ SAMPLE_ISSUES = [
 ]
 
 
+SAMPLE_REPOS = [
+    {
+        "name_with_owner": "acme/frontend",
+        "owner": "acme",
+        "name": "frontend",
+        "description": "Customer-facing web app",
+        "is_private": False,
+        "is_archived": False,
+        "default_branch": "main",
+        "viewer_permission": "ADMIN",
+        "open_pr_count": 2,
+        "open_issue_count": 2,
+        "pushed_at": "2025-03-18T14:30:00Z",
+        "url": "https://github.com/acme/frontend",
+    },
+    {
+        "name_with_owner": "acme/backend",
+        "owner": "acme",
+        "name": "backend",
+        "description": "Core API service",
+        "is_private": True,
+        "is_archived": False,
+        "default_branch": "main",
+        "viewer_permission": "MAINTAIN",
+        "open_pr_count": 2,
+        "open_issue_count": 2,
+        "pushed_at": "2025-03-19T10:00:00Z",
+        "url": "https://github.com/acme/backend",
+    },
+    {
+        "name_with_owner": "acme/infra",
+        "owner": "acme",
+        "name": "infra",
+        "description": "Terraform + deployment config",
+        "is_private": True,
+        "is_archived": False,
+        "default_branch": "main",
+        "viewer_permission": "WRITE",
+        "open_pr_count": 1,
+        "open_issue_count": 1,
+        "pushed_at": "2025-03-18T19:00:00Z",
+        "url": "https://github.com/acme/infra",
+    },
+    {
+        "name_with_owner": "globex/widgets",
+        "owner": "globex",
+        "name": "widgets",
+        "description": "Reusable widget library",
+        "is_private": False,
+        "is_archived": False,
+        "default_branch": "main",
+        "viewer_permission": "ADMIN",
+        "open_pr_count": 0,
+        "open_issue_count": 0,
+        "pushed_at": "2025-03-01T08:00:00Z",
+        "url": "https://github.com/globex/widgets",
+    },
+]
+
+
 async def seed_database(db_path: Path):
     """Seed the test database with sample data."""
     db = await get_db(db_path)
@@ -415,9 +476,11 @@ async def seed_database(db_path: Path):
             await upsert_pr_check_runs(db, pr_id, SAMPLE_CHECKS[pr_id])
     for issue in SAMPLE_ISSUES:
         await upsert_issue(db, issue)
+    for repo in SAMPLE_REPOS:
+        await upsert_repo(db, repo)
     await db.commit()
     await db.close()
-    print(f"Seeded {len(SAMPLE_PRS)} PRs and {len(SAMPLE_ISSUES)} issues into {db_path}")
+    print(f"Seeded {len(SAMPLE_PRS)} PRs, {len(SAMPLE_ISSUES)} issues, {len(SAMPLE_REPOS)} repos into {db_path}")
 
 
 def main():
