@@ -7,9 +7,9 @@ from unittest.mock import AsyncMock
 import pytest
 
 from af1.config import Config
-from af1.db import get_db, upsert_issue, upsert_pr_check_runs, upsert_pr_commits, upsert_pr_files, upsert_pull_request
+from af1.db import get_db, upsert_issue, upsert_pr_check_runs, upsert_pr_commits, upsert_pr_files, upsert_pull_request, upsert_repo
 from af1.server import create_app, create_routes
-from af1.tests.conftest import make_checks, make_commits, make_files, make_issue, make_pr, mock_github_client
+from af1.tests.conftest import make_checks, make_commits, make_files, make_issue, make_pr, make_repo, mock_github_client
 
 pytestmark = pytest.mark.asyncio(loop_scope="function")
 
@@ -45,6 +45,7 @@ def app(test_config):
         api_me,
         api_pr_detail,
         api_pull_requests,
+        api_repos,
         api_sync,
         api_sync_pr,
         api_sync_repo,
@@ -59,6 +60,7 @@ def app(test_config):
         Route("/api/prs/close", api_batch_close, methods=["POST"]),
         Route("/api/prs/approve", api_batch_approve, methods=["POST"]),
         Route("/api/prs/{owner}/{repo}/{number:int}", api_pr_detail),
+        Route("/api/repos", api_repos),
         Route("/api/issues", api_issues),
         Route("/api/issues/{owner}/{repo}/{number:int}", api_issue_detail),
         Route("/api/sync", api_sync, methods=["POST"]),
@@ -424,10 +426,42 @@ class TestCreateApp:
         assert "/api/prs" in route_paths
         assert "/api/prs/merge" in route_paths
         assert "/api/prs/close" in route_paths
+        assert "/api/repos" in route_paths
         assert "/api/issues" in route_paths
         assert "/api/sync" in route_paths
         assert "/api/prs/{owner}/{repo}/{number:int}/sync" in route_paths
         assert "/api/repos/{owner}/{repo}/sync" in route_paths
+
+
+class TestReposEndpoint:
+    async def test_repos_empty(self, app, client, tmp_path):
+        db = await get_db(tmp_path / "test.db")
+        app.state.db = db
+        try:
+            resp = await client.get("/api/repos")
+            assert resp.status_code == 200
+            assert resp.json() == []
+        finally:
+            await db.close()
+
+    async def test_repos_returns_data_with_counts(self, app, client, tmp_path):
+        db = await get_db(tmp_path / "test.db")
+        app.state.db = db
+        try:
+            await upsert_repo(db, make_repo(owner="acme", name="frontend", open_pr_count=2, open_issue_count=3))
+            await upsert_pull_request(db, make_pr(id=1, node_id="n1", repo_owner="acme", repo_name="frontend", number=1, ci_status="FAILURE"))
+            await db.commit()
+
+            resp = await client.get("/api/repos")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert len(data) == 1
+            assert data[0]["name_with_owner"] == "acme/frontend"
+            assert data[0]["open_pr_count"] == 2
+            assert data[0]["open_issue_count"] == 3
+            assert data[0]["failing_ci_count"] == 1
+        finally:
+            await db.close()
 
 
 class TestIssuesEndpoint:

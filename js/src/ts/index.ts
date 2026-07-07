@@ -5,6 +5,7 @@ import { renderIssueDetail } from "./issue-detail.js";
 import { renderIssueList } from "./issue-list.js";
 import { renderPRList } from "./pr-list.js";
 import { renderPRDetail } from "./pr-detail.js";
+import { renderRepoList } from "./repo-list.js";
 import { registerRoute, handleRoute } from "./router.js";
 
 // Register routes
@@ -23,6 +24,10 @@ registerRoute(/^\/issues$/, async (container) => {
   await renderIssueList(container);
 });
 
+registerRoute(/^\/repos$/, async (container) => {
+  await renderRepoList(container);
+});
+
 registerRoute(
   /^\/issue\/([^/]+)\/([^/]+)\/(\d+)$/,
   async (container, owner, repo, number) => {
@@ -37,7 +42,8 @@ function updateActiveNav(): void {
     const isActive =
       (view === "pr-list" && (hash === "/" || hash.startsWith("/pr/"))) ||
       (view === "issue-list" &&
-        (hash === "/issues" || hash.startsWith("/issue/")));
+        (hash === "/issues" || hash.startsWith("/issue/"))) ||
+      (view === "repo-list" && hash === "/repos");
     link.classList.toggle("active", isActive);
   });
 }

@@ -68,6 +68,23 @@ class TestRepos:
         assert repos[0]["is_private"] == 1
         assert repos[0]["is_archived"] == 1
 
+    async def test_counts_stored_and_failing_ci_derived(self, db):
+        await upsert_repo(db, make_repo(owner="o", name="r", open_pr_count=4, open_issue_count=2))
+        # two open PRs on the repo: one FAILURE, one SUCCESS → failing_ci_count == 1
+        await upsert_pull_request(db, make_pr(id=1, node_id="n1", repo_owner="o", repo_name="r", number=1, ci_status="FAILURE"))
+        await upsert_pull_request(db, make_pr(id=2, node_id="n2", repo_owner="o", repo_name="r", number=2, ci_status="SUCCESS"))
+        await db.commit()
+        repo = (await get_repos(db))[0]
+        assert repo["open_pr_count"] == 4
+        assert repo["open_issue_count"] == 2
+        assert repo["failing_ci_count"] == 1
+
+    async def test_failing_ci_ignores_closed_prs(self, db):
+        await upsert_repo(db, make_repo(owner="o", name="r"))
+        await upsert_pull_request(db, make_pr(id=1, node_id="n1", repo_owner="o", repo_name="r", number=1, state="CLOSED", ci_status="FAILURE"))
+        await db.commit()
+        assert (await get_repos(db))[0]["failing_ci_count"] == 0
+
 
 class TestDbPragmas:
     async def test_wal_mode_enabled(self, db):

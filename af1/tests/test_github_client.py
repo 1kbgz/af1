@@ -490,6 +490,8 @@ def _repo_node(owner, name, permission, **extra):
         "pushedAt": "2025-01-01T00:00:00Z",
         "url": f"https://github.com/{owner}/{name}",
         "viewerPermission": permission,
+        "openPRs": {"totalCount": 0},
+        "openIssues": {"totalCount": 0},
     }
     node.update(extra)
     return node
@@ -509,6 +511,12 @@ class TestNormalizeRepo:
         client = GitHubClient("token")
         repo = client._normalize_repo(_repo_node("o", "r", "READ", defaultBranchRef=None))
         assert repo["default_branch"] is None
+
+    def test_extracts_open_counts(self):
+        client = GitHubClient("token")
+        repo = client._normalize_repo(_repo_node("o", "r", "ADMIN", openPRs={"totalCount": 7}, openIssues={"totalCount": 3}))
+        assert repo["open_pr_count"] == 7
+        assert repo["open_issue_count"] == 3
 
 
 class TestFetchMaintainedRepos:

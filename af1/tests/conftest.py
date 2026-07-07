@@ -203,6 +203,8 @@ def make_repo(
     is_archived: bool = False,
     default_branch: str = "main",
     viewer_permission: str = "ADMIN",
+    open_pr_count: int = 0,
+    open_issue_count: int = 0,
     pushed_at: str = "2025-01-16T12:00:00Z",
     url: str | None = None,
 ) -> dict:
@@ -216,6 +218,8 @@ def make_repo(
         "is_archived": is_archived,
         "default_branch": default_branch,
         "viewer_permission": viewer_permission,
+        "open_pr_count": open_pr_count,
+        "open_issue_count": open_issue_count,
         "pushed_at": pushed_at,
         "url": url or f"https://github.com/{owner}/{name}",
     }

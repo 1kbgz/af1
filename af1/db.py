@@ -112,6 +112,8 @@ CREATE TABLE IF NOT EXISTS repos (
     is_archived INTEGER NOT NULL DEFAULT 0,
     default_branch TEXT,
     viewer_permission TEXT,
+    open_pr_count INTEGER NOT NULL DEFAULT 0,
+    open_issue_count INTEGER NOT NULL DEFAULT 0,
     pushed_at TEXT,
     url TEXT,
     synced_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -340,12 +342,13 @@ async def upsert_repo(db: aiosqlite.Connection, repo: dict) -> None:
     await db.execute(
         """INSERT INTO repos
            (name_with_owner, owner, name, description, is_private, is_archived,
-            default_branch, viewer_permission, pushed_at, url, synced_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            default_branch, viewer_permission, open_pr_count, open_issue_count, pushed_at, url, synced_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
            ON CONFLICT(name_with_owner) DO UPDATE SET
              owner=excluded.owner, name=excluded.name, description=excluded.description,
              is_private=excluded.is_private, is_archived=excluded.is_archived,
              default_branch=excluded.default_branch, viewer_permission=excluded.viewer_permission,
+             open_pr_count=excluded.open_pr_count, open_issue_count=excluded.open_issue_count,
              pushed_at=excluded.pushed_at, url=excluded.url, synced_at=datetime('now')""",
         (
             repo["name_with_owner"],
@@ -356,6 +359,8 @@ async def upsert_repo(db: aiosqlite.Connection, repo: dict) -> None:
             int(repo.get("is_archived", False)),
             repo.get("default_branch"),
             repo.get("viewer_permission"),
+            int(repo.get("open_pr_count", 0)),
+            int(repo.get("open_issue_count", 0)),
             repo.get("pushed_at"),
             repo.get("url"),
         ),
@@ -363,7 +368,15 @@ async def upsert_repo(db: aiosqlite.Connection, repo: dict) -> None:
 
 
 async def get_repos(db: aiosqlite.Connection) -> list[dict]:
-    cursor = await db.execute("SELECT * FROM repos ORDER BY pushed_at DESC")
+    # failing_ci_count is derived from cached open PRs for the repo (maintained-repo
+    # sync caches every open PR per repo, so this tracks the repo's failing-CI PRs).
+    cursor = await db.execute(
+        """SELECT r.*,
+                  (SELECT COUNT(*) FROM pull_requests p
+                   WHERE p.repo_owner = r.owner AND p.repo_name = r.name
+                     AND p.state = 'OPEN' AND p.ci_status IN ('FAILURE', 'ERROR')) AS failing_ci_count
+           FROM repos r ORDER BY r.pushed_at DESC"""
+    )
     return [_row_to_dict(r) for r in await cursor.fetchall()]
 
 
