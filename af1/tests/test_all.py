@@ -1,4 +1,4 @@
-from af1 import *  # noqa
+from af1 import *
 
 
 def test_all():
