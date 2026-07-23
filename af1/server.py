@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import uvicorn
+from httpx import HTTPError
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
@@ -42,7 +43,7 @@ async def api_me(request: Request) -> JSONResponse:
     try:
         user = await client.get_authenticated_user()
         return JSONResponse({"login": user["login"], "name": user.get("name"), "avatar_url": user.get("avatar_url")})
-    except Exception as e:
+    except HTTPError as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 
 

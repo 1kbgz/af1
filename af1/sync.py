@@ -308,5 +308,5 @@ async def sync_loop(db: aiosqlite.Connection, client: GitHubClient, config: Conf
             logger.exception("Sync loop error")
         try:
             await asyncio.wait_for(stop_event.wait(), timeout=config.sync_interval_seconds)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             pass

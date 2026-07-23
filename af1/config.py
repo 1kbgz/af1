@@ -28,7 +28,7 @@ class Config:
     sync_interval_seconds: int = 120
 
     @classmethod
-    def load(cls, **overrides: object) -> "Config":
+    def load(cls, **overrides: object) -> Config:
         """Load config from env vars, with optional keyword overrides (e.g. from CLI)."""
         token = os.environ.get("AF1_GITHUB_TOKEN", os.environ.get("GITHUB_TOKEN", ""))
         github_host = os.environ.get("AF1_GITHUB_HOST", "github.com")
@@ -43,18 +43,18 @@ class Config:
         sync_interval = int(os.environ.get("AF1_SYNC_INTERVAL", "120"))
 
         # CLI overrides take precedence over env vars
-        if "github_token" in overrides and overrides["github_token"]:
+        if overrides.get("github_token"):
             token = str(overrides["github_token"])
-        if "github_host" in overrides and overrides["github_host"]:
+        if overrides.get("github_host"):
             github_host = str(overrides["github_host"])
-        if "watched_authors" in overrides and overrides["watched_authors"]:
+        if overrides.get("watched_authors"):
             raw = str(overrides["watched_authors"])
             authors = [a.strip() for a in raw.split(",") if a.strip()]
-        if "watched_users" in overrides and overrides["watched_users"]:
+        if overrides.get("watched_users"):
             users = _csv(str(overrides["watched_users"]))
-        if "watched_orgs" in overrides and overrides["watched_orgs"]:
+        if overrides.get("watched_orgs"):
             orgs = _csv(str(overrides["watched_orgs"]))
-        if "watched_repos" in overrides and overrides["watched_repos"]:
+        if overrides.get("watched_repos"):
             repos = _csv(str(overrides["watched_repos"]))
 
         return cls(

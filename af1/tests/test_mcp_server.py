@@ -67,7 +67,7 @@ class TestListPRs:
         assert {i["repo"] for i in out["items"]} == {"acme/widget", "other/thing"}
 
     async def test_mine_scope_filters_to_watched_authors(self, mcp_ctx):
-        db, _, config = mcp_ctx
+        db, _, _config = mcp_ctx
         await _seed_prs(db)
         # sample_config watched_authors = ["testuser", "otheruser"]
         out = _json(await af1_list_prs(ListPRsInput(scope="mine")))
@@ -200,7 +200,7 @@ class TestWriteActions:
         client.approve_pull_request.assert_awaited_with("o", "r", 2)
 
     async def test_close_marks_closed(self, mcp_ctx):
-        db, client, _ = mcp_ctx
+        db, _client, _ = mcp_ctx
         await upsert_pull_request(db, make_pr(id=1, node_id="n1", repo_owner="o", repo_name="r", number=3))
         await db.commit()
         out = _json(await af1_close_prs(TargetsInput(targets=[Ref(owner="o", repo="r", number=3)])))
