@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 
+<<<<<<< before updating
 // The test server is seeded with 5 PRs:
 // PR #142: acme/frontend - "Add dark mode toggle" (alice, SUCCESS, MERGEABLE, APPROVED)
 // PR #143: acme/frontend - "Fix responsive layout" (bob, FAILURE, CONFLICTING, CHANGES_REQUESTED)
@@ -740,5 +741,10 @@ test.describe("Repo List Content", () => {
     await expect(
       page.locator(".repo-count.count-failing").first(),
     ).toBeVisible();
+=======
+test.describe("Basics", () => {
+  test("basic", async () => {
+    await expect("").toBe("");
+>>>>>>> after updating
   });
 });
