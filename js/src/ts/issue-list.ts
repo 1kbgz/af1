@@ -17,10 +17,6 @@ let sortAsc = false;
 
 let activeStatFilter: string | null = null;
 
-function issueKey(issue: Issue): string {
-  return `${issue.repo_owner}/${issue.repo_name}#${issue.number}`;
-}
-
 export async function renderIssueList(container: HTMLElement): Promise<void> {
   container.innerHTML = `<div class="loading">Loading issues&hellip;</div>`;
 
