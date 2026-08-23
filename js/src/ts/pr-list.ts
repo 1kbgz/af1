@@ -9,7 +9,6 @@ import {
   syncPR,
   syncRepo,
   type PullRequest,
-  type AppConfig,
 } from "./api.js";
 import {
   esc,
@@ -22,7 +21,6 @@ import {
 import { navigateTo } from "./router.js";
 
 let allPRs: PullRequest[] = [];
-let config: AppConfig | null = null;
 let filterText = "";
 let filterAuthors: Set<string> = new Set();
 let filterRepos: Set<string> = new Set();
@@ -40,13 +38,7 @@ function prKey(pr: PullRequest): string {
 }
 
 // --- Multi-select dropdown helper ---
-function createMultiSelect(
-  id: string,
-  label: string,
-  options: string[],
-  selected: Set<string>,
-  onChange: () => void,
-): string {
+function createMultiSelect(id: string, label: string): string {
   return `<div class="multi-select" id="${id}-ms"><button class="multi-select-btn" id="${id}-btn">${label}<span class="ms-count" id="${id}-count"></span> <span class="ms-caret">&#x25BE;</span></button><div class="multi-select-dropdown hidden" id="${id}-dropdown"></div></div>`;
 }
 
@@ -129,7 +121,7 @@ export async function renderPRList(container: HTMLElement): Promise<void> {
   `;
 
   try {
-    config = await getConfig();
+    await getConfig();
     allPRs = await getPullRequests();
   } catch (e) {
     container.innerHTML = `<div class="empty-state"><h3>Failed to load</h3><p>${esc(String(e))}</p></div>`;
@@ -171,43 +163,19 @@ export async function renderPRList(container: HTMLElement): Promise<void> {
 
   // Insert multi-selects
   document.getElementById("ms-author-placeholder")!.outerHTML =
-    createMultiSelect(
-      "ms-author",
-      "Authors",
-      authors,
-      filterAuthors,
-      renderDashboard,
-    );
+    createMultiSelect("ms-author", "Authors");
   document.getElementById("ms-repo-placeholder")!.outerHTML = createMultiSelect(
     "ms-repo",
     "Repos",
-    repos,
-    filterRepos,
-    renderDashboard,
   );
   document.getElementById("ms-ci-placeholder")!.outerHTML = createMultiSelect(
     "ms-ci",
     "CI Status",
-    ciOptions,
-    filterCIs,
-    renderDashboard,
   );
   document.getElementById("ms-label-placeholder")!.outerHTML =
-    createMultiSelect(
-      "ms-label",
-      "Labels",
-      labels,
-      filterLabels,
-      renderDashboard,
-    );
+    createMultiSelect("ms-label", "Labels");
   document.getElementById("ms-review-placeholder")!.outerHTML =
-    createMultiSelect(
-      "ms-review",
-      "Review",
-      reviewOptions,
-      filterReviews,
-      renderDashboard,
-    );
+    createMultiSelect("ms-review", "Review");
 
   initMultiSelect(
     "ms-author",
