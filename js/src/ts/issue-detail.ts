@@ -1,5 +1,3 @@
-/** af1 — Issue detail view. */
-
 import { getIssueDetail, type Issue } from "./api.js";
 import { esc, timeAgo, labelHTML } from "./render.js";
 import { navigateTo } from "./router.js";

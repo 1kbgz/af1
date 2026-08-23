@@ -1,6 +1,3 @@
-#########
-# BUILD #
-#########
 .PHONY: develop-py develop-js develop
 develop-py:
 	uv pip install -e .[develop]
@@ -31,9 +28,6 @@ build: build-js build-py  ## build the project
 install:  ## install python library
 	uv pip install .
 
-#########
-# LINTS #
-#########
 .PHONY: lint-py lint-js lint lints
 lint-py:  ## run python linter with ruff
 	python -m ruff check af1
@@ -48,7 +42,6 @@ lint-docs:  ## lint docs with mdformat and codespell
 
 lint: lint-js lint-py lint-docs  ## run project linters
 
-# alias
 lints: lint
 
 .PHONY: fix-py fix-js fix-docs fix format
@@ -65,12 +58,8 @@ fix-docs:  ## autoformat docs with mdformat and codespell
 
 fix: fix-js fix-py fix-docs  ## run project autoformatters
 
-# alias
 format: fix
 
-################
-# Other Checks #
-################
 .PHONY: check-dist check-types checks check
 
 check-dist:  ## check python sdist and wheel with check-dist
@@ -81,17 +70,12 @@ check-types:  ## check python types with ty
 
 checks: check-dist
 
-# alias
 check: checks
 
-#########
-# TESTS #
-#########
 .PHONY: test-py tests-py coverage-py
 test-py:  ## run python tests
 	python -m pytest -v af1/tests
 
-# alias
 tests-py: test-py
 
 coverage-py:  ## run python tests and collect test coverage
@@ -101,7 +85,6 @@ coverage-py:  ## run python tests and collect test coverage
 test-js:  ## run js tests
 	cd js; pnpm test
 
-# alias
 tests-js: test-js
 
 coverage-js: test-js  ## run js tests and collect test coverage
@@ -110,12 +93,8 @@ coverage-js: test-js  ## run js tests and collect test coverage
 test: test-py test-js  ## run all tests
 coverage: coverage-py coverage-js  ## run all tests and collect test coverage
 
-# alias
 tests: test
 
-###########
-# VERSION #
-###########
 .PHONY: show-version patch minor major
 
 show-version:  ## show current library version
@@ -130,9 +109,6 @@ minor:  ## bump a minor version
 major:  ## bump a major version
 	@bump-my-version bump major
 
-########
-# DIST #
-########
 .PHONY: dist dist-py dist-js dist-check publish
 
 dist-py:  ## build python dists
@@ -148,9 +124,6 @@ dist: clean build dist-js dist-py dist-check  ## build all dists
 
 publish: dist  ## publish python assets
 
-#########
-# CLEAN #
-#########
 .PHONY: deep-clean clean
 
 deep-clean: ## clean everything from the repository
@@ -158,8 +131,6 @@ deep-clean: ## clean everything from the repository
 
 clean: ## clean the repository
 	rm -rf .coverage coverage cover htmlcov logs build dist *.egg-info
-
-############################################################################################
 
 .PHONY: help
 

@@ -1,13 +1,5 @@
 import { test, expect } from "@playwright/test";
 
-// The test server is seeded with 5 PRs:
-// PR #142: acme/frontend - "Add dark mode toggle" (alice, SUCCESS, MERGEABLE, APPROVED)
-// PR #143: acme/frontend - "Fix responsive layout" (bob, FAILURE, CONFLICTING, CHANGES_REQUESTED)
-// PR #77:  acme/backend  - "Upgrade database migration" (alice, PENDING, MERGEABLE, Draft)
-// PR #78:  acme/backend  - "Add rate limiting" (charlie, SUCCESS, MERGEABLE, APPROVED)
-// PR #31:  acme/infra    - "Terraform module for staging" (bob, null CI, UNKNOWN, REVIEW_REQUIRED)
-
-// Helper: wait for the dashboard to fully load (default groups by repo → 3 tables)
 async function waitForDashboard(page) {
   await expect(page.locator(".pr-row").first()).toBeVisible({ timeout: 10000 });
 }
@@ -95,15 +87,12 @@ test.describe("Dashboard Stats", () => {
       timeout: 10000,
     });
 
-    // 5 open PRs total
     const totalCard = page.locator(".stat-total .stat-value");
     await expect(totalCard).toHaveText("5");
 
-    // 2 ready to merge (PR#142 and PR#78: SUCCESS + MERGEABLE + not draft)
     const readyCard = page.locator(".stat-ready .stat-value");
     await expect(readyCard).toHaveText("2");
 
-    // 1 draft
     const draftsCard = page.locator(".stat-drafts .stat-value");
     await expect(draftsCard).toHaveText("1");
   });
@@ -138,16 +127,13 @@ test.describe("Filtering", () => {
     await page.goto("/");
     await waitForDashboard(page);
 
-    // Open author dropdown
     await page.locator("#ms-author-btn").click();
     const dropdown = page.locator("#ms-author-dropdown");
     await expect(dropdown).toBeVisible();
 
-    // Select "alice"
     const aliceCheckbox = dropdown.locator('input[value="alice"]');
     await aliceCheckbox.check();
 
-    // Should show only alice's PRs (2)
     await expect(page.locator(".pr-row")).toHaveCount(2);
   });
 
@@ -159,10 +145,8 @@ test.describe("Filtering", () => {
     const dropdown = page.locator("#ms-repo-dropdown");
     await expect(dropdown).toBeVisible();
 
-    // Select "acme/backend"
     await dropdown.locator('input[value="acme/backend"]').check();
 
-    // Should show 2 backend PRs
     await expect(page.locator(".pr-row")).toHaveCount(2);
   });
 
@@ -174,10 +158,8 @@ test.describe("Filtering", () => {
     const dropdown = page.locator("#ms-ci-dropdown");
     await expect(dropdown).toBeVisible();
 
-    // Select "FAILURE"
     await dropdown.locator('input[value="FAILURE"]').check();
 
-    // Only PR #143 has FAILURE status
     await expect(page.locator(".pr-row")).toHaveCount(1);
     await expect(page.locator(".pr-row").first()).toContainText(
       "responsive layout",
@@ -191,7 +173,6 @@ test.describe("Filtering", () => {
     await page.locator("#ms-author-btn").click();
     await expect(page.locator("#ms-author-dropdown")).toBeVisible();
 
-    // Click outside
     await page.locator("body").click({ position: { x: 10, y: 10 } });
     await expect(page.locator("#ms-author-dropdown")).toBeHidden();
   });
@@ -204,7 +185,6 @@ test.describe("Filtering", () => {
     const dropdown = page.locator("#ms-label-dropdown");
     await expect(dropdown).toBeVisible();
 
-    // Select "bug" label — only PR #143 has it
     await dropdown.locator('input[value="bug"]').check();
     await expect(page.locator(".pr-row")).toHaveCount(1);
     await expect(page.locator(".pr-row").first()).toContainText(
@@ -220,7 +200,6 @@ test.describe("Filtering", () => {
     const dropdown = page.locator("#ms-review-dropdown");
     await expect(dropdown).toBeVisible();
 
-    // Select "APPROVED" — PR #142 and #88 are approved
     await dropdown.locator('input[value="APPROVED"]').check();
     await expect(page.locator(".pr-row")).toHaveCount(2);
   });
@@ -244,9 +223,7 @@ test.describe("Grouping", () => {
     await page.goto("/");
     await waitForDashboard(page);
 
-    // Default is "group by repo"
     const headers = page.locator(".group-header");
-    // 3 repos: acme/frontend, acme/backend, acme/infra
     await expect(headers).toHaveCount(3);
   });
 
@@ -256,7 +233,6 @@ test.describe("Grouping", () => {
 
     await page.locator("#group-by").selectOption("author");
     const headers = page.locator(".group-header");
-    // 3 authors: alice, bob, charlie
     await expect(headers).toHaveCount(3);
   });
 
@@ -276,13 +252,10 @@ test.describe("Sorting", () => {
     await page.goto("/");
     await waitForDashboard(page);
 
-    // Switch to no grouping for easier testing
     await page.locator("#group-by").selectOption("none");
 
-    // Click "Author" header to sort by author
     await page.locator('.sortable-th[data-sort="author"]').first().click();
 
-    // First row should be alice (alphabetical ascending)
     const firstRow = page.locator(".pr-row").first();
     await expect(firstRow).toContainText("alice");
   });
@@ -292,12 +265,11 @@ test.describe("Sorting", () => {
     await waitForDashboard(page);
     await page.locator("#group-by").selectOption("none");
 
-    // Click Author twice — first ascending, then descending
     const authorHeader = page
       .locator('.sortable-th[data-sort="author"]')
       .first();
-    await authorHeader.click(); // ascending
-    await authorHeader.click(); // descending
+    await authorHeader.click();
+    await authorHeader.click();
 
     const firstRow = page.locator(".pr-row").first();
     await expect(firstRow).toContainText("charlie");
@@ -309,14 +281,11 @@ test.describe("Batch Selection", () => {
     await page.goto("/");
     await waitForDashboard(page);
 
-    // Batch bar should be hidden initially
     await expect(page.locator("#batch-bar")).toBeHidden();
 
-    // Check first PR checkbox
     const checkbox = page.locator(".pr-checkbox").first();
     await checkbox.check();
 
-    // Batch bar should now be visible
     await expect(page.locator("#batch-bar")).toBeVisible();
     await expect(page.locator("#batch-count")).toContainText("1 selected");
     await expect(page.locator("#batch-merge")).toBeVisible();
@@ -339,11 +308,9 @@ test.describe("Batch Selection", () => {
     await page.goto("/");
     await waitForDashboard(page);
 
-    // Click the first group's select-all checkbox
     const groupSelectAll = page.locator(".group-select-all").first();
     await groupSelectAll.check();
 
-    // Should select all PRs in that group
     const batchCount = page.locator("#batch-count");
     const countText = await batchCount.textContent();
     expect(parseInt(countText)).toBeGreaterThan(0);
@@ -355,10 +322,8 @@ test.describe("PR Detail Navigation", () => {
     await page.goto("/");
     await waitForDashboard(page);
 
-    // Click the first PR row link
     await page.locator(".pr-row-link").first().click();
 
-    // Should navigate to PR detail
     await expect(page.locator(".pr-detail-header")).toBeVisible({
       timeout: 5000,
     });
@@ -403,8 +368,7 @@ test.describe("PR Detail Navigation", () => {
     await expect(page.locator(".pr-detail-badges")).toBeVisible({
       timeout: 10000,
     });
-    // Should have CI passed, No conflicts, Approved badges
-    await expect(page.locator(".badge-success")).toHaveCount(2); // CI + review
+    await expect(page.locator(".badge-success")).toHaveCount(2);
     await expect(page.locator(".badge-mergeable")).toHaveCount(1);
   });
 
@@ -433,7 +397,7 @@ test.describe("PR Detail Navigation", () => {
     await expect(page.locator(".pr-detail-badges")).toBeVisible({
       timeout: 10000,
     });
-    await expect(page.locator(".badge-failure")).toHaveCount(2); // CI + changes requested
+    await expect(page.locator(".badge-failure")).toHaveCount(2);
     await expect(page.locator(".badge-conflict")).toHaveCount(1);
   });
 
@@ -452,14 +416,12 @@ test.describe("PR Detail Navigation", () => {
     const firstHeader = page.locator(".file-header").first();
     const firstPatch = page.locator(".file-patch").first();
 
-    // Click to toggle
     await firstHeader.click();
     const hasOpenClass = await firstPatch.evaluate((el) =>
       el.classList.contains("open"),
     );
     expect(hasOpenClass).toBeTruthy();
 
-    // Click again to collapse
     await firstHeader.click();
     const stillOpen = await firstPatch.evaluate((el) =>
       el.classList.contains("open"),
@@ -486,7 +448,6 @@ test.describe("Hash Routing", () => {
     await page.goto("/");
     await waitForDashboard(page);
 
-    // Navigate via hash
     await page.evaluate(() => (window.location.hash = "/pr/acme/frontend/142"));
     await expect(page.locator(".pr-detail-header")).toBeVisible({
       timeout: 5000,
@@ -499,7 +460,6 @@ test.describe("PR Table Content", () => {
     await page.goto("/");
     await waitForDashboard(page);
 
-    // CI badges should be present in rows
     await expect(page.locator(".pr-row .badge-success").first()).toBeVisible();
     await expect(page.locator(".pr-row .badge-failure").first()).toBeVisible();
   });
@@ -508,7 +468,6 @@ test.describe("PR Table Content", () => {
     await page.goto("/");
     await waitForDashboard(page);
 
-    // Should have stat-add and stat-del spans in rows
     await expect(page.locator(".pr-row .stat-add").first()).toBeVisible();
     await expect(page.locator(".pr-row .stat-del").first()).toBeVisible();
   });
@@ -517,7 +476,6 @@ test.describe("PR Table Content", () => {
     await page.goto("/");
     await waitForDashboard(page);
 
-    // Time cells should contain some time-ago text
     const timeCells = page.locator(".td-time");
     const count = await timeCells.count();
     expect(count).toBeGreaterThan(0);
@@ -527,20 +485,11 @@ test.describe("PR Table Content", () => {
     await page.goto("/");
     await waitForDashboard(page);
 
-    // At least some rows should have labels
     const labels = page.locator(".pr-row .label-tag");
     const count = await labels.count();
     expect(count).toBeGreaterThan(0);
   });
 });
-
-// ===== Issue Tab Tests =====
-// The test server is seeded with 5 issues:
-// #100: acme/frontend - "Dark mode support" (alice)
-// #105: acme/frontend - "Accessibility audit for navigation" (bob)
-// #60:  acme/backend  - "API rate limiting design doc" (charlie)
-// #65:  acme/backend  - "Database connection pooling" (alice)
-// #20:  acme/infra    - "Set up monitoring for staging environment" (bob)
 
 async function waitForIssueList(page) {
   await expect(page.locator(".issue-row").first()).toBeVisible({
@@ -685,7 +634,6 @@ test.describe("Repos API", () => {
     const frontend = data.find((r) => r.name_with_owner === "acme/frontend");
     expect(frontend.open_pr_count).toBe(2);
     expect(frontend.open_issue_count).toBe(2);
-    // PR #143 on acme/frontend has ci_status FAILURE → derived count of 1
     expect(frontend.failing_ci_count).toBe(1);
   });
 });

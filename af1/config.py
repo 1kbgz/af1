@@ -42,7 +42,6 @@ class Config:
         port = int(os.environ.get("AF1_PORT", "8510"))
         sync_interval = int(os.environ.get("AF1_SYNC_INTERVAL", "120"))
 
-        # CLI overrides take precedence over env vars
         if overrides.get("github_token"):
             token = str(overrides["github_token"])
         if overrides.get("github_host"):

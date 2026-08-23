@@ -1,5 +1,3 @@
-/** af1 — PR detail view with commits, checks, and file diffs. */
-
 import {
   getPRDetail,
   type PRDetail,
@@ -71,12 +69,10 @@ export async function renderPRDetail(
     ${renderFilesSection(pr.files)}
   `;
 
-  // Back button
   document
     .getElementById("back-btn")
     ?.addEventListener("click", () => navigateTo("/"));
 
-  // File expand/collapse
   container.querySelectorAll(".file-header").forEach((header) => {
     header.addEventListener("click", () => {
       const patch = header.nextElementSibling as HTMLElement;

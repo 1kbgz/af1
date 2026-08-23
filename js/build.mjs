@@ -24,13 +24,10 @@ async function build() {
     force: true,
   });
 
-  // Bundle css
   await bundle_css();
 
-  // Copy HTML
   await cpy("src/html/*", "dist/");
 
-  // Copy images
   if (fs.existsSync("src/img")) {
     fs.mkdirSync("dist/img", { recursive: true });
     await cpy("src/img/*", "dist/img");
@@ -38,7 +35,6 @@ async function build() {
 
   await Promise.all(BUNDLES.map(bundle)).catch(() => process.exit(1));
 
-  // Copy servable assets to python extension (exclude esm/)
   fs.mkdirSync("../af1/extension", { recursive: true });
   await cpy("dist/**/*", "../af1/extension", {
     filter: (file) =>

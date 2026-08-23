@@ -11,7 +11,6 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-# GraphQL query: fetch open PRs for a search query (authored or review-requested)
 SEARCH_PRS_QUERY = """
 query($query: String!, $cursor: String) {
   search(query: $query, type: ISSUE, first: 50, after: $cursor) {
@@ -172,7 +171,6 @@ query($owner: String!, $repo: String!, $number: Int!) {
 """
 
 
-# Repo fields shared across the maintained-repo queries below.
 _REPO_FIELDS = """
     nameWithOwner
     name
@@ -231,7 +229,6 @@ query($owner: String!, $name: String!) {
 """
 )
 
-# Permission levels that indicate the token holder is effectively a maintainer.
 MAINTAINER_PERMISSIONS = {"ADMIN", "MAINTAIN", "WRITE"}
 
 
@@ -267,7 +264,6 @@ class GitHubClient:
             if resp.status_code != 403 or attempt == max_retries - 1:
                 resp.raise_for_status()
                 return resp
-            # Determine wait time from headers
             retry_after = resp.headers.get("retry-after")
             if retry_after:
                 wait = int(retry_after)
@@ -317,7 +313,6 @@ class GitHubClient:
                 if not search["pageInfo"]["hasNextPage"]:
                     break
                 cursor = search["pageInfo"]["endCursor"]
-        # Deduplicate by (owner, repo, number)
         seen = set()
         deduped = []
         for pr in all_prs:

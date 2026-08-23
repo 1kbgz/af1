@@ -3,7 +3,6 @@ import { test, expect } from "@playwright/test";
 // Visual regression tests using Playwright's screenshot comparison.
 // Run `pnpm test --update-snapshots` to generate/update baseline images.
 
-// Helper: wait for the dashboard to fully load
 async function waitForDashboard(page) {
   await expect(page.locator(".pr-row").first()).toBeVisible({ timeout: 10000 });
 }
@@ -39,7 +38,6 @@ test.describe("Visual — Dashboard", () => {
   test("PR table rows", async ({ page }) => {
     await page.goto("/");
     await waitForDashboard(page);
-    // Capture just the first table (first group)
     await expect(page.locator(".pr-table").first()).toHaveScreenshot(
       "pr-table-first-group.png",
     );
@@ -126,7 +124,6 @@ test.describe("Visual — PR Detail", () => {
     await page.goto("/#/pr/acme/frontend/142");
     await expect(page.locator(".file-list")).toBeVisible({ timeout: 10000 });
 
-    // Expand first file
     await page.locator(".file-header").first().click();
     await expect(page.locator(".file-patch.open")).toBeVisible();
 
@@ -144,7 +141,6 @@ test.describe("Visual — Filter States", () => {
     await page.locator("#ms-author-btn").click();
     await expect(page.locator("#ms-author-dropdown")).toBeVisible();
 
-    // Capture the multi-select area
     await expect(page.locator("#ms-author-ms")).toHaveScreenshot(
       "author-dropdown-open.png",
     );
@@ -217,7 +213,6 @@ test.describe("Visual — Batch Bar", () => {
 test.describe("Visual — Header", () => {
   test("application header", async ({ page }) => {
     await page.goto("/");
-    // Wait for header to be visible
     await expect(page.locator("#app-header")).toBeVisible();
     await expect(page.locator("#app-header")).toHaveScreenshot(
       "app-header.png",

@@ -1,5 +1,3 @@
-/** af1 — Repo list view: maintained repos across orgs with inline counts. */
-
 import { getRepos, type Repo } from "./api.js";
 import { esc, timeAgo } from "./render.js";
 

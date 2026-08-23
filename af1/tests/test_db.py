@@ -70,7 +70,6 @@ class TestRepos:
 
     async def test_counts_stored_and_failing_ci_derived(self, db):
         await upsert_repo(db, make_repo(owner="o", name="r", open_pr_count=4, open_issue_count=2))
-        # two open PRs on the repo: one FAILURE, one SUCCESS → failing_ci_count == 1
         await upsert_pull_request(db, make_pr(id=1, node_id="n1", repo_owner="o", repo_name="r", number=1, ci_status="FAILURE"))
         await upsert_pull_request(db, make_pr(id=2, node_id="n2", repo_owner="o", repo_name="r", number=2, ci_status="SUCCESS"))
         await db.commit()
@@ -170,7 +169,6 @@ class TestUpsertPrCommits:
         await upsert_pr_commits(db, pr_id, commits)
         await db.commit()
 
-        # Update message on existing commit
         commits[0]["message"] = "Updated commit message"
         await upsert_pr_commits(db, pr_id, commits)
         await db.commit()
@@ -192,7 +190,6 @@ class TestUpsertPrFiles:
 
         result = await get_pr_files(db, pr_id)
         assert len(result) == 2
-        # Sorted by filename
         assert result[0]["filename"] == "src/widget.py"
         assert result[1]["filename"] == "tests/test_widget.py"
 
@@ -203,7 +200,6 @@ class TestUpsertPrFiles:
         await upsert_pr_files(db, pr_id, files)
         await db.commit()
 
-        # Replace with different files
         new_files = [{"filename": "new_file.py", "status": "added", "additions": 5, "deletions": 0, "patch": None}]
         await upsert_pr_files(db, pr_id, new_files)
         await db.commit()
@@ -233,7 +229,6 @@ class TestUpsertPrCheckRuns:
         await upsert_pr_check_runs(db, pr_id, checks)
         await db.commit()
 
-        # Replace with updated checks
         new_checks = [{"name": "CI", "status": "completed", "conclusion": "failure", "url": None}]
         await upsert_pr_check_runs(db, pr_id, new_checks)
         await db.commit()
@@ -248,7 +243,6 @@ class TestUpsertPrCheckRuns:
         pr_id = await upsert_pull_request(db, pr)
         await db.commit()
 
-        # Simulate duplicate names in a single batch
         checks = [
             {"name": "CI", "status": "completed", "conclusion": "failure", "url": None},
             {"name": "CI", "status": "completed", "conclusion": "success", "url": None},
@@ -258,7 +252,6 @@ class TestUpsertPrCheckRuns:
 
         result = await get_pr_checks(db, pr_id)
         assert len(result) == 1
-        # Last one wins with INSERT OR REPLACE
         assert result[0]["conclusion"] == "success"
 
 

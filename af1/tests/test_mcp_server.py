@@ -69,7 +69,6 @@ class TestListPRs:
     async def test_mine_scope_filters_to_watched_authors(self, mcp_ctx):
         db, _, _config = mcp_ctx
         await _seed_prs(db)
-        # sample_config watched_authors = ["testuser", "otheruser"]
         out = _json(await af1_list_prs(ListPRsInput(scope="mine")))
         assert out["total"] == 1
         assert out["items"][0]["author"] == "testuser"

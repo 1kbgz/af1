@@ -37,15 +37,12 @@ async def sync_all_prs(
     """
     logger.info("Starting PR sync for authors: %s", config.watched_authors)
 
-    # Fetch PRs authored by watched users
     prs = await client.fetch_open_prs_for_authors(config.watched_authors)
     logger.info("Fetched %d open PRs from watched authors", len(prs))
 
-    # Also fetch PRs where the primary user has review requested
     if config.watched_authors:
         review_prs = await client.fetch_review_requested_prs(config.watched_authors[0])
         logger.info("Fetched %d review-requested PRs", len(review_prs))
-        # Merge, dedup
         seen = {(p["repo_owner"], p["repo_name"], p["number"]) for p in prs}
         for pr in review_prs:
             key = (pr["repo_owner"], pr["repo_name"], pr["number"])
@@ -53,10 +50,8 @@ async def sync_all_prs(
                 prs.append(pr)
                 seen.add(key)
 
-    # Upsert each PR and fetch details
     for pr in prs:
         try:
-            # Check if PR is unchanged since last sync
             prior = await get_pr_updated_state(db, pr["repo_owner"], pr["repo_name"], pr["number"])
             changed = prior is None or prior[0] != pr["updated_at"] or prior[1] != pr.get("head_sha")
 
@@ -72,7 +67,6 @@ async def sync_all_prs(
 
         # Fetch details individually so one failure doesn't block the others
 
-        # Use inline commits from bulk query when available and complete
         inline_commits = pr.get("commits")
         if inline_commits is not None and pr.get("commits_complete", False):
             try:
@@ -105,7 +99,6 @@ async def sync_all_prs(
 
         logger.debug("Synced PR %s/%s#%d", pr["repo_owner"], pr["repo_name"], pr["number"])
 
-    # Mark PRs that are OPEN in the DB but no longer returned by GitHub
     still_open = {(p["repo_owner"], p["repo_name"], p["number"]) for p in prs}
     if extra_open_keys:
         still_open |= extra_open_keys
@@ -121,7 +114,6 @@ async def sync_single_pr(db: aiosqlite.Connection, client: GitHubClient, owner: 
     pr_id = await upsert_pull_request(db, pr)
     await db.commit()
 
-    # Use inline commits when available and complete
     inline_commits = pr.get("commits")
     if inline_commits is not None and pr.get("commits_complete", False):
         await upsert_pr_commits(db, pr_id, inline_commits)
@@ -147,11 +139,9 @@ async def sync_repo_prs(db: aiosqlite.Connection, client: GitHubClient, owner: s
     """Sync all open PRs for a specific repo that belong to watched authors."""
     logger.info("Syncing PRs for repo %s/%s", owner, repo)
 
-    # Fetch open PRs from watched authors, filter to this repo
     all_prs = await client.fetch_open_prs_for_authors(config.watched_authors)
     repo_prs = [p for p in all_prs if p["repo_owner"] == owner and p["repo_name"] == repo]
 
-    # Also include review-requested PRs for this repo
     if config.watched_authors:
         review_prs = await client.fetch_review_requested_prs(config.watched_authors[0])
         seen = {(p["repo_owner"], p["repo_name"], p["number"]) for p in repo_prs}
@@ -170,7 +160,6 @@ async def sync_repo_prs(db: aiosqlite.Connection, client: GitHubClient, owner: s
             logger.exception("Failed to upsert PR %s/%s#%d", pr["repo_owner"], pr["repo_name"], pr["number"])
             continue
 
-        # Use inline commits when available and complete
         inline_commits = pr.get("commits")
         if inline_commits is not None and pr.get("commits_complete", False):
             try:
@@ -211,7 +200,6 @@ async def sync_all_issues(db: aiosqlite.Connection, client: GitHubClient, config
     issues = await client.fetch_open_issues_for_authors(config.watched_authors)
     logger.info("Fetched %d open issues from watched authors", len(issues))
 
-    # Also fetch issues assigned to the primary user
     if config.watched_authors:
         assigned = await client.fetch_assigned_issues(config.watched_authors[0])
         logger.info("Fetched %d assigned issues", len(assigned))
@@ -230,7 +218,6 @@ async def sync_all_issues(db: aiosqlite.Connection, client: GitHubClient, config
         except Exception:
             logger.exception("Failed to sync issue %s/%s#%d", issue["repo_owner"], issue["repo_name"], issue["number"])
 
-    # Mark issues that are OPEN in the DB but no longer returned by GitHub
     still_open_issues = {(i["repo_owner"], i["repo_name"], i["number"]) for i in issues}
     await mark_stale_issues_closed(db, still_open_issues)
 

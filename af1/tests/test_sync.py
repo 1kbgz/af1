@@ -24,7 +24,6 @@ class TestSyncAllPrs:
         assert len(prs) == 1
         assert prs[0]["title"] == "Fix the widget"
 
-        # Verify commits, files, checks were also synced
         pr = prs[0]
         commits = await get_pr_commits(db, pr["id"])
         assert len(commits) == 2
@@ -56,7 +55,6 @@ class TestSyncAllPrs:
         pr = make_pr()
         client = mock_github_client()
         client.fetch_open_prs_for_authors.return_value = [pr]
-        # Same PR also appears in review-requested
         client.fetch_review_requested_prs.return_value = [pr]
 
         await sync_all_prs(db, client, sample_config)
@@ -71,7 +69,6 @@ class TestSyncAllPrs:
         client = mock_github_client()
         client.fetch_open_prs_for_authors.return_value = [pr1, pr2]
 
-        # Make commit fetch fail for first PR
         call_count = 0
 
         async def failing_commits(owner, repo, number):
@@ -85,9 +82,7 @@ class TestSyncAllPrs:
 
         await sync_all_prs(db, client, sample_config)
 
-        # Both PRs should be upserted (the first one before commits fail)
         prs = await get_open_prs(db)
-        # At least pr2 should have commits
         assert len(prs) >= 1
 
     async def test_files_failure_still_syncs_pr_and_commits(self, db, sample_config):
@@ -155,17 +150,14 @@ class TestSyncAllPrs:
         """If a PR's updated_at and head_sha haven't changed, skip detail fetches."""
         client = mock_github_client()
 
-        # First sync: details should be fetched
         await sync_all_prs(db, client, sample_config)
         assert client.fetch_pr_files.call_count == 1
         assert client.fetch_pr_check_runs.call_count == 1
 
-        # Reset mocks
         client.fetch_pr_commits.reset_mock()
         client.fetch_pr_files.reset_mock()
         client.fetch_pr_check_runs.reset_mock()
 
-        # Second sync with same data: details should be skipped
         await sync_all_prs(db, client, sample_config)
         client.fetch_pr_files.assert_not_called()
         client.fetch_pr_check_runs.assert_not_called()
@@ -174,10 +166,8 @@ class TestSyncAllPrs:
         """If updated_at changes, detail fetches should happen again."""
         client = mock_github_client()
 
-        # First sync
         await sync_all_prs(db, client, sample_config)
 
-        # Reset and change updated_at
         client.fetch_pr_files.reset_mock()
         client.fetch_pr_check_runs.reset_mock()
         updated_pr = make_pr(updated_at="2025-01-17T12:00:00Z")
@@ -204,7 +194,6 @@ class TestSyncAllPrs:
 
         await sync_all_prs(db, client, sample_config)
 
-        # fetch_pr_commits should NOT be called since inline commits were complete
         client.fetch_pr_commits.assert_not_called()
         prs = await get_open_prs(db)
         commits = await get_pr_commits(db, prs[0]["id"])
@@ -219,11 +208,10 @@ class TestSyncAllPrs:
 
         await sync_all_prs(db, client, sample_config)
 
-        # Should fall back to fetch_pr_commits
         assert client.fetch_pr_commits.call_count == 1
         prs = await get_open_prs(db)
         commits = await get_pr_commits(db, prs[0]["id"])
-        assert len(commits) == 2  # from make_commits() via mock
+        assert len(commits) == 2
 
 
 class TestSyncLoop:
@@ -232,7 +220,6 @@ class TestSyncLoop:
         sample_config.sync_interval_seconds = 1
         stop_event = asyncio.Event()
 
-        # Stop after first sync
         original_fetch = client.fetch_open_prs_for_authors
 
         async def fetch_and_stop(*args, **kwargs):
@@ -244,7 +231,6 @@ class TestSyncLoop:
 
         await asyncio.wait_for(sync_loop(db, client, sample_config, stop_event), timeout=5.0)
 
-        # At least one sync should have happened
         prs = await get_open_prs(db)
         assert len(prs) == 1
 
@@ -340,23 +326,20 @@ class TestSyncMaintained:
 
         assert keys == set()
         client.fetch_open_prs_for_repo.assert_not_called()
-        # repo is still recorded
         assert [r["name_with_owner"] for r in await get_repos(db)] == ["acme/old"]
 
     async def test_extra_open_keys_protect_maintained_prs_from_stale(self, db, sample_config):
-        # A maintained-repo PR authored by someone outside watched_authors must not be
-        # marked CLOSED by the authored-PR sweep.
         from af1.db import upsert_pull_request
 
         repo_pr = make_pr(id=5002, repo_owner="acme", repo_name="widget", number=7, author="contributor")
         await upsert_pull_request(db, repo_pr)
         await db.commit()
 
-        client = mock_github_client()  # authored sweep returns the default testuser PR, not the repo PR
+        client = mock_github_client()
         await sync_all_prs(db, client, sample_config, extra_open_keys={("acme", "widget", 7)})
 
         prs = {(_p["repo_owner"], _p["repo_name"], _p["number"]): _p for _p in await get_open_prs(db)}
-        assert ("acme", "widget", 7) in prs  # still OPEN, protected
+        assert ("acme", "widget", 7) in prs
 
     async def test_maintained_pr_without_protection_is_closed(self, db, sample_config):
         from af1.db import upsert_pull_request
@@ -366,7 +349,7 @@ class TestSyncMaintained:
         await db.commit()
 
         client = mock_github_client()
-        await sync_all_prs(db, client, sample_config)  # no extra_open_keys
+        await sync_all_prs(db, client, sample_config)
 
         open_keys = {(p["repo_owner"], p["repo_name"], p["number"]) for p in await get_open_prs(db)}
-        assert ("acme", "widget", 8) not in open_keys  # swept to CLOSED
+        assert ("acme", "widget", 8) not in open_keys

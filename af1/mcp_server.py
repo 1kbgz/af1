@@ -66,8 +66,6 @@ mcp = FastMCP(
 )
 
 
-# --- Shared context (db / client / config) ---
-
 _ctx: dict[str, Any] = {}
 _ctx_lock = asyncio.Lock()
 
@@ -88,9 +86,6 @@ async def _require_ctx():
             _ctx["client"] = GitHubClient(config.github_token, config.github_host)
             _ctx["db"] = await get_db(config.db_path)
         return _ctx["db"], _ctx["client"], _ctx["config"]
-
-
-# --- Formatting / filtering helpers ---
 
 
 class ResponseFormat(str, Enum):
@@ -180,9 +175,6 @@ def _render(payload: dict, fmt: ResponseFormat, *, kind: str) -> str:
     return "\n".join(lines)
 
 
-# --- Input models ---
-
-
 class PRScope(str, Enum):
     ALL = "all"
     MINE = "mine"
@@ -242,9 +234,6 @@ class SyncInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     pr: Ref | None = Field(default=None, description="Sync only this single PR (full detail). Omit for a full sync of everything.")
-
-
-# --- Read tools ---
 
 
 @mcp.tool(
@@ -383,9 +372,6 @@ async def af1_list_repos() -> str:
     db, _, _ = await _require_ctx()
     repos = await get_repos(db)
     return _dumps({"count": len(repos), "repos": repos})
-
-
-# --- Sync + write tools ---
 
 
 @mcp.tool(
