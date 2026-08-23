@@ -1,5 +1,3 @@
-/** af1 — API client for communicating with the Python backend. */
-
 const API_BASE = window.location.origin;
 
 async function fetchJSON<T>(path: string, init?: RequestInit): Promise<T> {

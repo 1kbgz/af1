@@ -212,7 +212,6 @@ class TestBatchMerge:
             data = resp.json()
             assert len(data) == 1
             assert data[0]["success"] is True
-            # Verify DB state was updated
             from af1.db import get_pr
 
             pr_row = await get_pr(db, "org", "repo", 1)
@@ -273,7 +272,6 @@ class TestBatchClose:
             assert resp.status_code == 200
             data = resp.json()
             assert data[0]["success"] is True
-            # Verify DB state was updated
             from af1.db import get_pr
 
             pr_row = await get_pr(db, "org", "repo", 1)
@@ -415,7 +413,6 @@ class TestCreateApp:
 
     def test_create_routes(self):
         routes = create_routes()
-        # Should have API routes + maybe static mount
         route_paths = []
         for r in routes:
             if hasattr(r, "path"):
@@ -545,6 +542,4 @@ class TestNoCacheMiddleware:
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://testserver") as client:
             resp = await client.get("/api/health")
-            # API responses don't get the no-cache header via middleware
-            # (they go through the normal handler)
             assert resp.status_code == 200

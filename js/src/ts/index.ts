@@ -1,5 +1,3 @@
-/** af1 — Main entry point. */
-
 import { getMe, getConfig, triggerSync } from "./api.js";
 import { renderIssueDetail } from "./issue-detail.js";
 import { renderIssueList } from "./issue-list.js";
@@ -8,7 +6,6 @@ import { renderPRDetail } from "./pr-detail.js";
 import { renderRepoList } from "./repo-list.js";
 import { registerRoute, handleRoute } from "./router.js";
 
-// Register routes
 registerRoute(/^\/$/, async (container) => {
   await renderPRList(container);
 });
@@ -48,11 +45,9 @@ function updateActiveNav(): void {
   });
 }
 
-// App initialization
 async function init(): Promise<void> {
   const loading = document.getElementById("loading");
 
-  // Load user info
   try {
     const user = await getMe();
     const userEl = document.getElementById("user-info");
@@ -61,7 +56,6 @@ async function init(): Promise<void> {
     // Server may not be ready yet
   }
 
-  // Sync button
   const syncBtn = document.getElementById("sync-btn");
   let syncing = false;
 
@@ -84,7 +78,6 @@ async function init(): Promise<void> {
     syncBtn.addEventListener("click", doSync);
   }
 
-  // Periodic background sync
   try {
     const config = await getConfig();
     const interval = config.sync_interval_seconds;
@@ -95,19 +88,16 @@ async function init(): Promise<void> {
     // Config unavailable — skip auto-sync
   }
 
-  // Handle route changes
   window.addEventListener("hashchange", () => {
     updateActiveNav();
     handleRoute();
   });
 
-  // Initial route
   if (loading) loading.classList.add("hidden");
   updateActiveNav();
   await handleRoute();
 }
 
-// Start
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", init);
 } else {

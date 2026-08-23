@@ -1,13 +1,9 @@
-/** af1 — Render helper utilities. */
-
-/** Escape HTML special characters. */
 export function esc(s: string): string {
   const el = document.createElement("span");
   el.textContent = s;
   return el.innerHTML;
 }
 
-/** Format a relative time string, e.g. "3 hours ago". */
 export function timeAgo(isoDate: string): string {
   const date = new Date(isoDate);
   const now = new Date();
@@ -23,7 +19,6 @@ export function timeAgo(isoDate: string): string {
   return `${months}mo ago`;
 }
 
-/** CI status to badge HTML. */
 export function ciBadge(status: string | null): string {
   if (!status) return "";
   const s = status.toUpperCase();
@@ -36,7 +31,6 @@ export function ciBadge(status: string | null): string {
   return `<span class="badge badge-pending">${esc(status)}</span>`;
 }
 
-/** Mergeable status to badge. */
 export function mergeableBadge(mergeable: string | null): string {
   if (!mergeable) return "";
   const m = mergeable.toUpperCase();
@@ -49,7 +43,6 @@ export function mergeableBadge(mergeable: string | null): string {
   return "";
 }
 
-/** Review decision to badge. */
 export function reviewBadge(decision: string | null): string {
   if (!decision) return "";
   const d = decision.toUpperCase();
@@ -62,10 +55,8 @@ export function reviewBadge(decision: string | null): string {
   return "";
 }
 
-/** Render a label. */
 export function labelHTML(label: { name: string; color: string }): string {
   const bg = `#${label.color}`;
-  // Compute text color based on luminance
   const r = parseInt(label.color.substring(0, 2), 16);
   const g = parseInt(label.color.substring(2, 4), 16);
   const b = parseInt(label.color.substring(4, 6), 16);

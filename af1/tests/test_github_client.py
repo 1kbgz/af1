@@ -251,7 +251,6 @@ class TestFetchOpenPrs:
             "allCommits": {"pageInfo": {"hasNextPage": False}, "nodes": []},
         }
 
-        # Return same PR for two different authors
         mock_resp = Mock()
         mock_resp.raise_for_status = lambda: None
         mock_resp.json.return_value = {
@@ -265,7 +264,6 @@ class TestFetchOpenPrs:
         client._client.post = AsyncMock(return_value=mock_resp)
 
         result = await client.fetch_open_prs_for_authors(["user1", "user2"])
-        # Same PR returned for both, but should be deduped
         assert len(result) == 1
 
     async def test_skips_none_nodes(self):
@@ -443,7 +441,6 @@ class TestRestGetRetry:
         resp = await client._rest_get("https://api.github.com/test")
         assert resp.status_code == 200
         assert client._client.get.call_count == 3
-        # backoff: 2^0=1, 2^1=2
         assert gc.asyncio.sleep.await_count == 2
 
     async def test_raises_after_max_retries(self, monkeypatch):
@@ -557,7 +554,6 @@ class TestFetchMaintainedRepos:
 
     async def test_inaccessible_org_skipped(self):
         client = GitHubClient("token")
-        # SAML-protected org: _graphql returns partial data with organization=None
         client._graphql = AsyncMock(return_value={"organization": None})
         repos = await client.fetch_maintained_repos([], ["locked"], [])
         assert repos == []

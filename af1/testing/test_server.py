@@ -489,14 +489,11 @@ def main():
 
     from af1.server import create_app
 
-    # Use a temp directory for the test database
     test_dir = Path(tempfile.mkdtemp(prefix="af1_test_"))
     db_path = test_dir / "test.db"
 
-    # Seed the database
     asyncio.run(seed_database(db_path))
 
-    # Create config — use a dummy token; sync is disabled by using a very long interval
     config = Config(
         github_token="ghp_test_placeholder_token",
         github_host="github.com",

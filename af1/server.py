@@ -30,9 +30,6 @@ logger = logging.getLogger(__name__)
 EXTENSION_DIR = Path(__file__).parent / "extension"
 
 
-# --- API handlers ---
-
-
 async def api_health(request: Request) -> JSONResponse:
     return JSONResponse({"status": "ok", "version": __version__})
 
@@ -207,9 +204,6 @@ async def api_issue_detail(request: Request) -> JSONResponse:
     return JSONResponse(issue)
 
 
-# --- App lifecycle ---
-
-
 @asynccontextmanager
 async def lifespan(app: Starlette):
     config = app.state.config
@@ -227,7 +221,6 @@ async def lifespan(app: Starlette):
     # cache, client, and sync as the web API.
     set_mcp_context(db=app.state.db, client=app.state.github_client, config=config)
 
-    # Start background sync
     sync_task = asyncio.create_task(sync_loop(app.state.db, app.state.github_client, config, app.state.stop_event))
     logger.info("af1 server started on %s:%d", config.host, config.port)
 
@@ -235,7 +228,6 @@ async def lifespan(app: Starlette):
     async with mcp_server.session_manager.run():
         yield
 
-    # Shutdown
     app.state.stop_event.set()
     sync_task.cancel()
     try:
@@ -263,11 +255,9 @@ def create_routes() -> list:
         Route("/api/sync", api_sync, methods=["POST"]),
         Route("/api/prs/{owner}/{repo}/{number:int}/sync", api_sync_pr, methods=["POST"]),
         Route("/api/repos/{owner}/{repo}/sync", api_sync_repo, methods=["POST"]),
-        # MCP server (streamable HTTP) for agent access — endpoint at /mcp
         Mount("/mcp", app=mcp_server.streamable_http_app()),
     ]
 
-    # Serve frontend static files if the extension directory exists
     if EXTENSION_DIR.exists():
         routes.append(Mount("/", app=StaticFiles(directory=str(EXTENSION_DIR), html=True)))
 

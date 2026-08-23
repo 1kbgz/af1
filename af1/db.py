@@ -195,7 +195,6 @@ async def upsert_pull_request(db: aiosqlite.Connection, pr: dict) -> int:
             pr["url"],
         ),
     )
-    # Get the row id
     cursor = await db.execute(
         "SELECT id FROM pull_requests WHERE repo_owner=? AND repo_name=? AND number=?",
         (pr["repo_owner"], pr["repo_name"], pr["number"]),
@@ -435,7 +434,6 @@ def _row_to_dict(row) -> dict:
     if row is None:
         return {}
     d = dict(row)
-    # Parse JSON fields
     for field in ("labels", "assignees"):
         if field in d and isinstance(d[field], str):
             try:

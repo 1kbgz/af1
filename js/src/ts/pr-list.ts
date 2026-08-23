@@ -1,5 +1,3 @@
-/** af1 — PR dashboard view with summary stats, table layout, and batch actions. */
-
 import {
   getPullRequests,
   getConfig,
@@ -27,17 +25,16 @@ let filterRepos: Set<string> = new Set();
 let filterCIs: Set<string> = new Set();
 let filterLabels: Set<string> = new Set();
 let filterReviews: Set<string> = new Set();
-let selectedPRs = new Set<string>(); // "owner/repo#number"
+let selectedPRs = new Set<string>();
 let groupBy: "none" | "repo" | "author" = "repo";
 let sortColumn: "number" | "author" | "created" | "updated" = "number";
 let sortAsc = false; // false = descending (newest first, matching GitHub)
-let activeStat: string | null = null; // active stat-card filter key
+let activeStat: string | null = null;
 
 function prKey(pr: PullRequest): string {
   return `${pr.repo_owner}/${pr.repo_name}#${pr.number}`;
 }
 
-// --- Multi-select dropdown helper ---
 function createMultiSelect(id: string, label: string): string {
   return `<div class="multi-select" id="${id}-ms"><button class="multi-select-btn" id="${id}-btn">${label}<span class="ms-count" id="${id}-count"></span> <span class="ms-caret">&#x25BE;</span></button><div class="multi-select-dropdown hidden" id="${id}-dropdown"></div></div>`;
 }
@@ -53,7 +50,6 @@ function initMultiSelect(
   const dropdown = document.getElementById(`${id}-dropdown`)!;
   const countEl = document.getElementById(`${id}-count`)!;
 
-  // Build dropdown items
   dropdown.innerHTML = options
     .map((opt) => {
       const checked = selected.has(opt) ? "checked" : "";
@@ -68,7 +64,6 @@ function initMultiSelect(
 
   btn.addEventListener("click", (e) => {
     e.stopPropagation();
-    // Close all other dropdowns
     document.querySelectorAll(".multi-select-dropdown").forEach((d) => {
       if (d !== dropdown) d.classList.add("hidden");
     });
@@ -87,7 +82,6 @@ function initMultiSelect(
     });
 }
 
-// Close dropdowns on outside click
 document.addEventListener("click", () => {
   document
     .querySelectorAll(".multi-select-dropdown")
@@ -133,7 +127,6 @@ export async function renderPRList(container: HTMLElement): Promise<void> {
     return;
   }
 
-  // Build multi-select options
   const authors = [...new Set(allPRs.map((pr) => pr.author))].sort();
   const repos = [
     ...new Set(allPRs.map((pr) => `${pr.repo_owner}/${pr.repo_name}`)),
@@ -161,7 +154,6 @@ export async function renderPRList(container: HTMLElement): Promise<void> {
     NONE: "No review",
   };
 
-  // Insert multi-selects
   document.getElementById("ms-author-placeholder")!.outerHTML =
     createMultiSelect("ms-author", "Authors");
   document.getElementById("ms-repo-placeholder")!.outerHTML = createMultiSelect(
@@ -201,7 +193,6 @@ export async function renderPRList(container: HTMLElement): Promise<void> {
     renderDashboard,
   );
 
-  // Event handlers
   const searchInput = document.getElementById(
     "filter-search",
   ) as HTMLInputElement;
@@ -217,7 +208,6 @@ export async function renderPRList(container: HTMLElement): Promise<void> {
     },
   );
 
-  // Batch action handlers
   document
     .getElementById("batch-merge")!
     .addEventListener("click", handleBatchMerge);
@@ -406,14 +396,12 @@ function renderDashboard(): void {
       .join("");
   }
 
-  // Attach event listeners
   container.querySelectorAll<HTMLInputElement>(".pr-checkbox").forEach((cb) => {
     cb.checked = selectedPRs.has(cb.value);
     cb.addEventListener("change", () => {
       if (cb.checked) selectedPRs.add(cb.value);
       else selectedPRs.delete(cb.value);
       updateBatchBar();
-      // Update the group select-all checkboxes
       updateGroupCheckboxes(container);
     });
   });
@@ -443,7 +431,6 @@ function renderDashboard(): void {
     });
   });
 
-  // Sort column handlers
   container.querySelectorAll<HTMLElement>(".sortable-th").forEach((th) => {
     th.addEventListener("click", () => {
       const col = th.dataset.sort as typeof sortColumn;
@@ -457,7 +444,6 @@ function renderDashboard(): void {
     });
   });
 
-  // Inline quick action handlers
   container.querySelectorAll<HTMLElement>(".inline-merge").forEach((btn) => {
     btn.addEventListener("click", async (e) => {
       e.stopPropagation();
@@ -628,7 +614,6 @@ function updateBatchBar(): void {
     bar.classList.remove("hidden");
     countEl.textContent = `${selectedPRs.size} selected`;
 
-    // Enable merge only if all selected PRs are merge-ready
     const mergeBtn = document.getElementById(
       "batch-merge",
     ) as HTMLButtonElement;
@@ -673,7 +658,7 @@ async function handleBatchMerge(): Promise<void> {
       pr.mergeable?.toUpperCase() !== "MERGEABLE" ||
       pr.draft,
   );
-  if (nonReady.length > 0) return; // guard
+  if (nonReady.length > 0) return;
 
   const targets = selected.map((pr) => ({
     owner: pr.repo_owner,
@@ -691,7 +676,6 @@ async function handleBatchMerge(): Promise<void> {
       );
     }
     selectedPRs.clear();
-    // Re-fetch PRs
     allPRs = await getPullRequests();
     renderDashboard();
   } catch (e) {

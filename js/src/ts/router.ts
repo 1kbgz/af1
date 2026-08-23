@@ -1,5 +1,3 @@
-/** af1 — Simple hash-based router. */
-
 type RouteHandler = (
   container: HTMLElement,
   ...params: string[]
@@ -28,6 +26,5 @@ export async function handleRoute(): Promise<void> {
     }
   }
 
-  // Fallback: go home
   navigateTo("/");
 }

@@ -1,5 +1,3 @@
-/** af1 — Issue list view with stats, filters, and table. */
-
 import { getIssues, type Issue } from "./api.js";
 import { esc, timeAgo, labelHTML } from "./render.js";
 import { navigateTo } from "./router.js";
@@ -36,7 +34,6 @@ function renderDashboard(container?: HTMLElement): void {
 
   const filtered = getFilteredIssues();
 
-  // Stats
   const total = allIssues.length;
   const uniqueRepos = new Set(
     allIssues.map((i) => `${i.repo_owner}/${i.repo_name}`),
@@ -46,7 +43,6 @@ function renderDashboard(container?: HTMLElement): void {
     (i) => !i.assignees || i.assignees.length === 0,
   ).length;
 
-  // Collect all labels
   const allLabels = new Set<string>();
   allIssues.forEach((i) =>
     (i.labels || []).forEach((l) => allLabels.add(l.name)),
@@ -103,14 +99,12 @@ function renderDashboard(container?: HTMLElement): void {
 function getFilteredIssues(): Issue[] {
   let issues = [...allIssues];
 
-  // Stat filter
   if (activeStatFilter === "comments") {
     issues = issues.filter((i) => i.comment_count > 0);
   } else if (activeStatFilter === "unassigned") {
     issues = issues.filter((i) => !i.assignees || i.assignees.length === 0);
   }
 
-  // Text filter
   if (filterText) {
     const lower = filterText.toLowerCase();
     issues = issues.filter(
@@ -122,7 +116,6 @@ function getFilteredIssues(): Issue[] {
     );
   }
 
-  // Label filter
   if (filterLabels.size > 0) {
     issues = issues.filter((i) => {
       const names = (i.labels || []).map((l) => l.name);
@@ -130,7 +123,6 @@ function getFilteredIssues(): Issue[] {
     });
   }
 
-  // Sort
   issues.sort((a, b) => {
     let cmp = 0;
     switch (sortColumn) {
@@ -234,7 +226,6 @@ function renderTable(issues: Issue[], groupLabel: string | null): string {
 }
 
 function bindEvents(container: HTMLElement): void {
-  // Filter input
   const filterInput =
     container.querySelector<HTMLInputElement>("#filter-input");
   if (filterInput) {
@@ -244,7 +235,6 @@ function bindEvents(container: HTMLElement): void {
     });
   }
 
-  // Group select
   const groupSelect =
     container.querySelector<HTMLSelectElement>("#group-select");
   if (groupSelect) {
@@ -254,7 +244,6 @@ function bindEvents(container: HTMLElement): void {
     });
   }
 
-  // Stat card filters
   container.querySelectorAll<HTMLElement>(".stat-card").forEach((card) => {
     card.addEventListener("click", () => {
       const f = card.dataset.filter ?? null;
@@ -263,7 +252,6 @@ function bindEvents(container: HTMLElement): void {
     });
   });
 
-  // Sortable headers
   container.querySelectorAll<HTMLElement>(".sortable-th").forEach((th) => {
     th.addEventListener("click", () => {
       const col = th.dataset.sort as SortColumn;
@@ -277,7 +265,6 @@ function bindEvents(container: HTMLElement): void {
     });
   });
 
-  // Label multi-select
   const labelBtn = container.querySelector("#label-select-btn");
   const labelDrop = container.querySelector("#label-dropdown");
   if (labelBtn && labelDrop) {
@@ -297,7 +284,6 @@ function bindEvents(container: HTMLElement): void {
     document.addEventListener("click", () => labelDrop.classList.add("hidden"));
   }
 
-  // Issue row click → open GitHub URL
   container.querySelectorAll<HTMLElement>(".issue-row-link").forEach((link) => {
     link.addEventListener("click", () => {
       const { owner, repo, number } = link.dataset;
