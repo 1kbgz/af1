@@ -34,7 +34,7 @@ dependencies = [
     "starlette>=0.40",
     "uvicorn[standard]>=0.30",
     "aiosqlite>=0.20",
-    "mcp>=1.2,<2",
+    "mcp>=1.2,<3",
 ]
 
 [project.optional-dependencies]
