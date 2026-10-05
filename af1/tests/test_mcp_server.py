@@ -7,6 +7,9 @@ from dataclasses import replace
 
 import pytest
 import pytest_asyncio
+from httpx import ASGITransport, AsyncClient
+from mcp.server.mcpserver.exceptions import ToolError
+from starlette.applications import Starlette
 
 from af1 import mcp_server as M
 from af1.db import upsert_issue, upsert_pull_request, upsert_repo
@@ -241,3 +244,54 @@ class TestToolRegistration:
             "af1_approve_prs",
             "af1_close_prs",
         }
+
+    async def test_tool_annotations(self):
+        tools = {t.name: t for t in await M.mcp.list_tools()}
+        assert tools["af1_list_prs"].annotations.read_only_hint is True
+        assert tools["af1_merge_prs"].annotations.destructive_hint is True
+
+    async def test_call_tool_validates_and_dispatches(self, mcp_ctx):
+        db, _, _ = mcp_ctx
+        await _seed_prs(db)
+        result = await M.mcp.call_tool("af1_list_prs", {"params": {"authors": ["alice"]}})
+        assert result.is_error is False
+        out = _json(result.content[0].text)
+        assert out["total"] == 1
+        assert out["items"][0]["author"] == "alice"
+
+    async def test_call_tool_rejects_invalid_input(self, mcp_ctx):
+        with pytest.raises(ToolError, match="params.limit"):
+            await M.mcp.call_tool("af1_list_prs", {"params": {"limit": 0}})
+
+
+class TestHTTPTransport:
+    @pytest.mark.parametrize("host", ["localhost:8510", "127.0.0.1:8510"])
+    async def test_mounted_tool_call(self, mcp_ctx, host):
+        from af1.server import create_routes
+
+        db, _, _ = mcp_ctx
+        await _seed_prs(db)
+        app = Starlette(routes=create_routes())
+        async with M.mcp.session_manager.run(), AsyncClient(transport=ASGITransport(app=app), base_url=f"http://{host}") as client:
+            response = await client.post(
+                "/mcp/",
+                headers={"Accept": "application/json, text/event-stream", "Origin": f"http://{host}"},
+                json={"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "af1_list_prs", "arguments": {"params": {}}}},
+            )
+        assert response.status_code == 200
+        assert "mcp-session-id" not in response.headers
+        message = json.loads(next(line.removeprefix("data: ") for line in response.text.splitlines() if line.startswith("data: ")))
+        assert message["result"]["isError"] is False
+        assert _json(message["result"]["content"][0]["text"])["total"] == 3
+
+    async def test_rejects_untrusted_host(self, mcp_ctx):
+        from af1.server import create_routes
+
+        app = Starlette(routes=create_routes())
+        async with M.mcp.session_manager.run(), AsyncClient(transport=ASGITransport(app=app), base_url="http://untrusted.example") as client:
+            response = await client.post(
+                "/mcp/",
+                headers={"Accept": "application/json, text/event-stream"},
+                json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+            )
+        assert response.status_code == 421
