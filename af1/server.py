@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import uvicorn
+from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
@@ -28,6 +29,13 @@ from .sync import run_full_sync, sync_loop, sync_repo_prs, sync_single_pr
 logger = logging.getLogger(__name__)
 
 EXTENSION_DIR = Path(__file__).parent / "extension"
+
+# af1 binds to localhost only; keep DNS-rebinding protection on but allow the local host.
+_LOCAL_HOSTS = ["127.0.0.1", "127.0.0.1:*", "localhost", "localhost:*"]
+_TRANSPORT_SECURITY = TransportSecuritySettings(
+    allowed_hosts=_LOCAL_HOSTS,
+    allowed_origins=[f"http://{h}" for h in _LOCAL_HOSTS],
+)
 
 
 async def api_health(request: Request) -> JSONResponse:
@@ -255,7 +263,10 @@ def create_routes() -> list:
         Route("/api/sync", api_sync, methods=["POST"]),
         Route("/api/prs/{owner}/{repo}/{number:int}/sync", api_sync_pr, methods=["POST"]),
         Route("/api/repos/{owner}/{repo}/sync", api_sync_repo, methods=["POST"]),
-        Mount("/mcp", app=mcp_server.streamable_http_app()),
+        Mount(
+            "/mcp",
+            app=mcp_server.streamable_http_app(stateless_http=True, streamable_http_path="/", transport_security=_TRANSPORT_SECURITY),
+        ),
     ]
 
     if EXTENSION_DIR.exists():

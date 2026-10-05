@@ -19,8 +19,7 @@ import logging
 from enum import Enum
 from typing import Any
 
-from mcp.server.fastmcp import FastMCP
-from mcp.server.transport_security import TransportSecuritySettings
+from mcp.server.mcpserver import MCPServer
 from pydantic import BaseModel, ConfigDict, Field
 
 from .config import Config
@@ -50,19 +49,9 @@ with filters. Use scope='maintained' to limit to repos you maintain (configured 
 AF1_WATCHED_USERS / AF1_WATCHED_ORGS / AF1_WATCHED_REPOS). PR list items expose the signals
 needed to decide if a PR is actionable: draft, ci_status, mergeable, and review_decision."""
 
-# af1 binds to localhost only; keep DNS-rebinding protection on but allow the local host.
-_LOCAL_HOSTS = ["127.0.0.1", "127.0.0.1:*", "localhost", "localhost:*"]
-_TRANSPORT_SECURITY = TransportSecuritySettings(
-    allowed_hosts=_LOCAL_HOSTS,
-    allowed_origins=[f"http://{h}" for h in _LOCAL_HOSTS],
-)
-
-mcp = FastMCP(
+mcp = MCPServer(
     "af1_mcp",
     instructions=INSTRUCTIONS,
-    stateless_http=True,
-    streamable_http_path="/",
-    transport_security=_TRANSPORT_SECURITY,
 )
 
 
