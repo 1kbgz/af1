@@ -405,7 +405,8 @@ class TestRestGetRetry:
         """_rest_get uses x-ratelimit-reset header for wait time."""
         import af1.github_client as gc
 
-        monkeypatch.setattr(gc.asyncio, "sleep", AsyncMock())
+        sleep = AsyncMock()
+        monkeypatch.setattr(gc.asyncio, "sleep", sleep)
         monkeypatch.setattr(gc.time, "time", lambda: 1000)
 
         client = GitHubClient("token")
@@ -420,13 +421,14 @@ class TestRestGetRetry:
 
         resp = await client._rest_get("https://api.github.com/test")
         assert resp.status_code == 200
-        gc.asyncio.sleep.assert_awaited_once_with(2)
+        sleep.assert_awaited_once_with(2)
 
     async def test_retries_on_403_with_exponential_backoff(self, monkeypatch):
         """_rest_get uses exponential backoff when no rate-limit headers."""
         import af1.github_client as gc
 
-        monkeypatch.setattr(gc.asyncio, "sleep", AsyncMock())
+        sleep = AsyncMock()
+        monkeypatch.setattr(gc.asyncio, "sleep", sleep)
 
         client = GitHubClient("token")
         client._rest_delay = 0
@@ -441,7 +443,7 @@ class TestRestGetRetry:
         resp = await client._rest_get("https://api.github.com/test")
         assert resp.status_code == 200
         assert client._client.get.call_count == 3
-        assert gc.asyncio.sleep.await_count == 2
+        assert sleep.await_count == 2
 
     async def test_raises_after_max_retries(self, monkeypatch):
         """_rest_get raises after exhausting retries on persistent 403."""

@@ -123,6 +123,7 @@ class TestUpsertPullRequest:
         await db.commit()
 
         row = await get_pr(db, "testorg", "testrepo", 42)
+        assert row is not None
         assert row["title"] == "Updated title"
         assert row["additions"] == 20
 
@@ -132,6 +133,7 @@ class TestUpsertPullRequest:
         await db.commit()
 
         row = await get_pr(db, "testorg", "testrepo", 42)
+        assert row is not None
         assert isinstance(row["labels"], list)
         assert len(row["labels"]) == 2
         assert row["labels"][0]["name"] == "bug"

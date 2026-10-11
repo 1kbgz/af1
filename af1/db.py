@@ -200,6 +200,7 @@ async def upsert_pull_request(db: aiosqlite.Connection, pr: dict) -> int:
         (pr["repo_owner"], pr["repo_name"], pr["number"]),
     )
     row = await cursor.fetchone()
+    assert row is not None
     return row["id"]
 
 
@@ -312,6 +313,7 @@ async def upsert_issue(db: aiosqlite.Connection, issue: dict) -> int:
         (issue["repo_owner"], issue["repo_name"], issue["number"]),
     )
     row = await cursor.fetchone()
+    assert row is not None
     return row["id"]
 
 

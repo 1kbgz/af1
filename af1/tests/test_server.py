@@ -215,6 +215,7 @@ class TestBatchMerge:
             from af1.db import get_pr
 
             pr_row = await get_pr(db, "org", "repo", 1)
+            assert pr_row is not None
             assert pr_row["state"] == "MERGED"
         finally:
             await db.close()
@@ -275,6 +276,7 @@ class TestBatchClose:
             from af1.db import get_pr
 
             pr_row = await get_pr(db, "org", "repo", 1)
+            assert pr_row is not None
             assert pr_row["state"] == "CLOSED"
         finally:
             await db.close()

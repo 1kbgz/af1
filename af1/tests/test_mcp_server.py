@@ -9,6 +9,7 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from mcp.server.mcpserver.exceptions import ToolError
+from mcp.types import CallToolResult, TextContent
 from starlette.applications import Starlette
 
 from af1 import mcp_server as M
@@ -188,6 +189,7 @@ class TestWriteActions:
         from af1.db import get_pr
 
         pr = await get_pr(db, "acme", "widget", 1)
+        assert pr is not None
         assert pr["state"] == "MERGED"
 
     async def test_merge_method_passed_through(self, mcp_ctx):
@@ -209,7 +211,9 @@ class TestWriteActions:
         assert out["results"][0]["success"] is True
         from af1.db import get_pr
 
-        assert (await get_pr(db, "o", "r", 3))["state"] == "CLOSED"
+        pr = await get_pr(db, "o", "r", 3)
+        assert pr is not None
+        assert pr["state"] == "CLOSED"
 
     async def test_write_without_token_errors(self, mcp_ctx):
         db, client, config = mcp_ctx
@@ -227,7 +231,9 @@ class TestWriteActions:
         assert out["results"][0]["success"] is False
         from af1.db import get_pr
 
-        assert (await get_pr(db, "o", "r", 4))["state"] == "OPEN"
+        pr = await get_pr(db, "o", "r", 4)
+        assert pr is not None
+        assert pr["state"] == "OPEN"
 
 
 class TestToolRegistration:
@@ -247,15 +253,22 @@ class TestToolRegistration:
 
     async def test_tool_annotations(self):
         tools = {t.name: t for t in await M.mcp.list_tools()}
-        assert tools["af1_list_prs"].annotations.read_only_hint is True
-        assert tools["af1_merge_prs"].annotations.destructive_hint is True
+        list_annotations = tools["af1_list_prs"].annotations
+        merge_annotations = tools["af1_merge_prs"].annotations
+        assert list_annotations is not None
+        assert merge_annotations is not None
+        assert list_annotations.read_only_hint is True
+        assert merge_annotations.destructive_hint is True
 
     async def test_call_tool_validates_and_dispatches(self, mcp_ctx):
         db, _, _ = mcp_ctx
         await _seed_prs(db)
         result = await M.mcp.call_tool("af1_list_prs", {"params": {"authors": ["alice"]}})
+        assert isinstance(result, CallToolResult)
         assert result.is_error is False
-        out = _json(result.content[0].text)
+        content = result.content[0]
+        assert isinstance(content, TextContent)
+        out = _json(content.text)
         assert out["total"] == 1
         assert out["items"][0]["author"] == "alice"
 
