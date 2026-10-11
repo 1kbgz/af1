@@ -54,7 +54,7 @@ def make_pr(
     draft: bool = False,
     mergeable: str = "MERGEABLE",
     head_ref: str = "fix-widget",
-    head_sha: str = "abc123def456",
+    head_sha: str | None = "abc123def456",
     base_ref: str = "main",
     base_sha: str = "000111222333",
     additions: int = 10,

@@ -20,6 +20,7 @@ from enum import Enum
 from typing import Any
 
 from mcp.server.mcpserver import MCPServer
+from mcp.types import ToolAnnotations
 from pydantic import BaseModel, ConfigDict, Field
 
 from .config import Config
@@ -227,7 +228,7 @@ class SyncInput(BaseModel):
 
 @mcp.tool(
     name="af1_list_prs",
-    annotations={"title": "List Pull Requests", "readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False},
+    annotations=ToolAnnotations(title="List Pull Requests", read_only_hint=True, destructive_hint=False, idempotent_hint=True, open_world_hint=False),
 )
 async def af1_list_prs(params: ListPRsInput) -> str:
     """List open pull requests from the local cache, with filters for triage.
@@ -275,7 +276,9 @@ async def af1_list_prs(params: ListPRsInput) -> str:
 
 @mcp.tool(
     name="af1_get_pr",
-    annotations={"title": "Get Pull Request Detail", "readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False},
+    annotations=ToolAnnotations(
+        title="Get Pull Request Detail", read_only_hint=True, destructive_hint=False, idempotent_hint=True, open_world_hint=False
+    ),
 )
 async def af1_get_pr(params: Ref) -> str:
     """Get full cached detail for one PR: metadata, commits, file diffs, and CI checks.
@@ -303,7 +306,7 @@ async def af1_get_pr(params: Ref) -> str:
 
 @mcp.tool(
     name="af1_list_issues",
-    annotations={"title": "List Issues", "readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False},
+    annotations=ToolAnnotations(title="List Issues", read_only_hint=True, destructive_hint=False, idempotent_hint=True, open_world_hint=False),
 )
 async def af1_list_issues(params: ListIssuesInput) -> str:
     """List open issues from the local cache, with author/repo/assignee/text filters.
@@ -333,7 +336,7 @@ async def af1_list_issues(params: ListIssuesInput) -> str:
 
 @mcp.tool(
     name="af1_get_issue",
-    annotations={"title": "Get Issue Detail", "readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False},
+    annotations=ToolAnnotations(title="Get Issue Detail", read_only_hint=True, destructive_hint=False, idempotent_hint=True, open_world_hint=False),
 )
 async def af1_get_issue(params: Ref) -> str:
     """Get full cached detail for one issue (body, labels, assignees, comment count).
@@ -349,7 +352,9 @@ async def af1_get_issue(params: Ref) -> str:
 
 @mcp.tool(
     name="af1_list_repos",
-    annotations={"title": "List Maintained Repos", "readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False},
+    annotations=ToolAnnotations(
+        title="List Maintained Repos", read_only_hint=True, destructive_hint=False, idempotent_hint=True, open_world_hint=False
+    ),
 )
 async def af1_list_repos() -> str:
     """List the repos af1 tracks as maintained (where your token has write/maintain/admin).
@@ -365,7 +370,7 @@ async def af1_list_repos() -> str:
 
 @mcp.tool(
     name="af1_sync",
-    annotations={"title": "Sync from GitHub", "readOnlyHint": False, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True},
+    annotations=ToolAnnotations(title="Sync from GitHub", read_only_hint=False, destructive_hint=False, idempotent_hint=True, open_world_hint=True),
 )
 async def af1_sync(params: SyncInput) -> str:
     """Refresh the local cache from GitHub before querying.
@@ -410,7 +415,9 @@ async def _act_on_prs(targets: list[Ref], action, *, post_state: str | None) -> 
 
 @mcp.tool(
     name="af1_merge_prs",
-    annotations={"title": "Merge Pull Requests", "readOnlyHint": False, "destructiveHint": True, "idempotentHint": False, "openWorldHint": True},
+    annotations=ToolAnnotations(
+        title="Merge Pull Requests", read_only_hint=False, destructive_hint=True, idempotent_hint=False, open_world_hint=True
+    ),
 )
 async def af1_merge_prs(params: MergeInput) -> str:
     """Merge one or more PRs on GitHub, then mark them MERGED in the cache.
@@ -428,7 +435,9 @@ async def af1_merge_prs(params: MergeInput) -> str:
 
 @mcp.tool(
     name="af1_approve_prs",
-    annotations={"title": "Approve Pull Requests", "readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": True},
+    annotations=ToolAnnotations(
+        title="Approve Pull Requests", read_only_hint=False, destructive_hint=False, idempotent_hint=False, open_world_hint=True
+    ),
 )
 async def af1_approve_prs(params: TargetsInput) -> str:
     """Submit an APPROVE review on one or more PRs.
@@ -444,7 +453,9 @@ async def af1_approve_prs(params: TargetsInput) -> str:
 
 @mcp.tool(
     name="af1_close_prs",
-    annotations={"title": "Close Pull Requests", "readOnlyHint": False, "destructiveHint": True, "idempotentHint": False, "openWorldHint": True},
+    annotations=ToolAnnotations(
+        title="Close Pull Requests", read_only_hint=False, destructive_hint=True, idempotent_hint=False, open_world_hint=True
+    ),
 )
 async def af1_close_prs(params: TargetsInput) -> str:
     """Close one or more PRs without merging, then mark them CLOSED in the cache.
